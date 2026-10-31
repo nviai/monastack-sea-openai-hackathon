@@ -1,6 +1,6 @@
 # Hướng dẫn chạy Monastack từ đầu
 
-Matrix chat cần Synapse + Postgres trên **server**. Dùng `python3 tools/local_office.py start --no-app` để khởi động toàn bộ backend trong Zellij. Xem [Matrix chat operations](matrix-chat-operations.md). Member và app không chạy homeserver riêng.
+Matrix chat cần Synapse + Postgres trên **server**. Dùng `python3 tools/local_office.py start --no-app` để khởi động toàn bộ backend trong Zellij. Xem [Matrix chat operations](matrix-chat-operations.md). Member và app không chạy homeserver riêng. **Server phải khởi động với IP LAN của nó** (`MONASTACK_SERVER_HOST=<IP-LAN-server>` hoặc `MONASTACK_MATRIX_PUBLIC_URL`); với 127.0.0.1 các máy khác báo "Chat could not connect".
 
 Client trên máy khác trong LAN: chạy `./tools/start-client.sh` để kết nối server `192.168.224.217`; xem [hướng dẫn client LAN](start-client-lan.vi.md).
 

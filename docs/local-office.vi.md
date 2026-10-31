@@ -13,7 +13,7 @@ Cấu hình đã được thiết lập tại workspace hiện tại. Các dịc
 | Postgres Matrix | Không publish port | Synapse only |
 | App macOS | Không có cổng server riêng | Node client `127.0.0.1:47840` |
 
-`MONASTACK_BIND_HOST=0.0.0.0` điều khiển địa chỉ lắng nghe của API và realtime; mặc định khi không đặt vẫn là `127.0.0.1`. Server hiện quảng bá IP LAN theo `runtime/server-address.json` cho realtime và media; xem [script client LAN](start-client-lan.vi.md). Master/member ở cùng máy dùng loopback để trao đổi tài khoản. App có thể kết nối server LAN bằng `MONASTACK_NODE_HOST`; script local vẫn dùng node client trên máy này.
+`MONASTACK_BIND_HOST=0.0.0.0` điều khiển địa chỉ lắng nghe của API và realtime; mặc định khi không đặt vẫn là `127.0.0.1`. **Bắt buộc:** server phải khởi động với IP LAN của chính nó (`MONASTACK_SERVER_HOST=<IP-LAN-server>` hoặc `MONASTACK_MATRIX_PUBLIC_URL=http://<IP-LAN-server>:8008`). Nếu dùng 127.0.0.1, máy khác sẽ thấy "Chat could not connect". Server hiện quảng bá IP LAN theo `runtime/server-address.json` cho realtime và media; xem [script client LAN](start-client-lan.vi.md). Master/member ở cùng máy dùng loopback để trao đổi tài khoản. App có thể kết nối server LAN bằng `MONASTACK_NODE_HOST`; script local vẫn dùng node client trên máy này.
 
 Chạy từ repository root:
 

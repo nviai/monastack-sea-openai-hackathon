@@ -1,6 +1,6 @@
 # ADR 0010: Matrix chat owned by the office authority
 
-Status: built, validation recorded in [Lane S validation](../matrix-lane-s-report.md). Date: 2026-10-31. Audience: workspace maintainers. Share boundary: repository collaborators. Owner: not assigned.
+Status: built. Date: 2026-10-31. Audience: workspace maintainers. Share boundary: repository collaborators. Owner: not assigned.
 
 ## 1. Topology and trust
 

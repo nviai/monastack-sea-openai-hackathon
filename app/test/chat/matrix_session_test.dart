@@ -8,9 +8,35 @@ import 'package:monastack/features/chat/data/matrix_session.dart';
 import 'package:monastack/features/chat/domain/chat_client.dart';
 import 'package:monastack/features/chat/data/matrix_chat_client.dart';
 import 'package:monastack/features/identity/credential_store.dart';
+import 'package:monastack/shared/node_request.dart';
 
 const matrixUser = '@test:fakeServer.notExisting';
 const matrixRoom = '!1234:fakeServer.notExisting';
+const dmRoom = '!dm:fakeServer.notExisting';
+const strayRoom = '!stray:fakeServer.notExisting';
+
+Map<String, Object> _joinedRoom(String name) => {
+  'state': {
+    'events': [
+      {
+        'event_id': '\$member-$name',
+        'origin_server_ts': 1,
+        'type': 'm.room.member',
+        'state_key': matrixUser,
+        'sender': matrixUser,
+        'content': {'membership': 'join', 'displayname': 'Test'},
+      },
+      {
+        'event_id': '\$name-$name',
+        'origin_server_ts': 2,
+        'type': 'm.room.name',
+        'state_key': '',
+        'sender': matrixUser,
+        'content': {'name': name},
+      },
+    ],
+  },
+};
 
 class RecordingMatrixTransport extends FakeMatrixApi {
   RecordingMatrixTransport() {
@@ -70,6 +96,8 @@ class RecordingMatrixTransport extends FakeMatrixApi {
                 'highlight_count': 1,
               },
             },
+            dmRoom: _joinedRoom('DM'),
+            strayRoom: _joinedRoom('Revoked office room'),
           },
         },
       };
@@ -145,6 +173,12 @@ void main() {
           'restricted': false,
         },
       ],
+      '/v1/chat/dms' => [
+        {
+          'matrix_room_id': dmRoom,
+          'actors': ['an', 'test'],
+        },
+      ],
       '/v1/chat/users' => [
         {
           'actor': 'test',
@@ -214,6 +248,45 @@ void main() {
       isTrue,
     );
   });
+  test('a 404 from chat config means chat is not available', () async {
+    final old = MatrixSession(
+      request: (m, p, [b]) async => throw const NodeFailure(404),
+      store: store,
+      node: '127.0.0.1:47830',
+      actor: 'test',
+      httpClient: transport,
+    );
+    expect(await old.open(), isNull);
+    final client = MatrixChatClient(old);
+    await client.start();
+    expect(client.phase, ChatPhase.unavailable);
+    await client.close();
+  });
+  test('re-login sends the stored device id', () async {
+    await session.open();
+    final first = transport.requests.singleWhere(
+      (r) => r.method == 'POST' && r.url.path.endsWith('/login'),
+    );
+    expect(jsonDecode(first.body), isNot(contains('device_id')));
+    final device = store.values[session.deviceKey];
+    expect(device, isNotNull);
+    await session.close();
+    await store.delete(session.key); // token revoked, device id kept
+    await session.open();
+    final second = transport.requests.lastWhere(
+      (r) => r.method == 'POST' && r.url.path.endsWith('/login'),
+    );
+    expect(jsonDecode(second.body), containsPair('device_id', device));
+  });
+  test('only office rooms and listed DMs are shown', () async {
+    final client = MatrixChatClient(session);
+    await client.start();
+    final ids = client.rooms.map((r) => r.id).toList();
+    expect(ids, containsAll([matrixRoom, dmRoom]));
+    expect(ids, isNot(contains(strayRoom)));
+    expect(client.rooms.singleWhere((r) => r.id == dmRoom).direct, isTrue);
+    await client.close();
+  });
   test('node and actor keys are isolated', () async {
     await session.open();
     final otherActor = MatrixSession(
@@ -237,7 +310,10 @@ void main() {
     expect(nodeCalls.where((v) => v == 'POST /v1/chat/session').length, 3);
     await otherActor.logout();
     await otherNode.logout();
-    expect(store.values.keys, [session.key]);
+    expect(
+      store.values.keys,
+      unorderedEquals([session.key, session.deviceKey]),
+    );
   });
   test('real SDK adapter sends one transaction and searches server history', () async {
     final client = MatrixChatClient(session);
@@ -284,7 +360,7 @@ void main() {
       jsonDecode(
         search.body,
       )['search_categories']['room_events']['filter']['rooms'],
-      [matrixRoom],
+      unorderedEquals([matrixRoom, dmRoom]),
     );
     await client.signOut();
     client.dispose();

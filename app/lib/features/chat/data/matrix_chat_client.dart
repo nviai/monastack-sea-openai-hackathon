@@ -19,6 +19,8 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
   @override
   final Set<String> revokedRooms = {};
   final Map<String, Map> mappings = {};
+  // The caller's DMs as listed by the node; the only unmapped rooms shown.
+  final Set<String> dmRooms = {};
   @override
   final Map<String, Timeline> timelines = {};
   final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -33,7 +35,8 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
     return [
       for (final room in sdk.rooms)
         if (room.membership == Membership.join &&
-            !revokedRooms.contains(room.id))
+            !revokedRooms.contains(room.id) &&
+            (mappings.containsKey(room.id) || dmRooms.contains(room.id)))
           ChatRoom(
             id: room.id,
             name:
@@ -160,6 +163,7 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
     revokedRooms.add(id);
     timelines.remove(id)?.cancelSubscriptions();
     mappings.remove(id);
+    dmRooms.remove(id);
   }
 
   @override
@@ -168,11 +172,17 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
   Future<void> _refreshRooms() async {
     if (_closed || session.client == null) return;
     final rows = await session.request('GET', '/v1/chat/rooms') as List;
+    final dms = await session.request('GET', '/v1/chat/dms') as List;
     if (_closed) return;
     final allowed = {for (final r in rows) r['matrix_room_id'] as String};
-    for (final id in mappings.keys.toList()) {
-      if (!allowed.contains(id)) revoke(id);
+    final dmIds = {for (final d in dms) d['matrix_room_id'] as String};
+    for (final id in {...mappings.keys, ...dmRooms}) {
+      if (!allowed.contains(id) && !dmIds.contains(id)) revoke(id);
     }
+    dmRooms
+      ..clear()
+      ..addAll(dmIds);
+    revokedRooms.removeAll(dmIds);
     for (final r in rows) {
       final id = r['matrix_room_id'] as String;
       mappings[id] = r as Map;
@@ -279,6 +289,8 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
       'actors': actors,
     }) as Map;
     final id = result['matrix_room_id'] as String;
+    dmRooms.add(id);
+    revokedRooms.remove(id);
     // The node registry is the authority for deduplication and group membership.
     if (sdk.getRoomById(id) == null) {
       await sdk.onSync.stream
@@ -318,6 +330,7 @@ class MatrixChatClient extends ChatClient with MatrixRichActions {
     }
     timelines.clear();
     mappings.clear();
+    dmRooms.clear();
     people = [];
   }
 

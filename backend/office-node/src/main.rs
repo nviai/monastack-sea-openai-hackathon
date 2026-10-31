@@ -1057,7 +1057,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/chat/session", axum::routing::post(matrix::session))
         .route("/v1/chat/users", get(matrix::users))
         .route("/v1/chat/rooms", get(matrix::rooms))
-        .route("/v1/chat/dms", axum::routing::post(matrix::dms))
+        .route("/v1/chat/dms", get(matrix::list_dms).post(matrix::dms))
         .route("/v1/chat/legacy/{scope}", get(matrix::legacy))
         .route("/v1/realtime/ticket", axum::routing::post(realtime_ticket))
         .route("/v1/realtime/epoch", get(realtime_epoch_handler))

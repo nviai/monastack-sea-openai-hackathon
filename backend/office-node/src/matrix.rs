@@ -23,7 +23,7 @@ mod reconcile;
 
 pub use authorize::authorize;
 pub use client::{Bridge, Config};
-pub use handlers::{config, dms, legacy, rooms, session, users};
+pub use handlers::{config, dms, legacy, list_dms, rooms, session, users};
 use identity::*;
 pub use mappings::initialize;
 use mappings::*;

@@ -136,6 +136,22 @@ pub async fn dms(
     caller(&db, &headers)?;
     Ok(Json(json!({"matrix_room_id":room,"created":!existing})))
 }
+pub async fn list_dms(State(db): State<Db>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+    let conn = db.lock().unwrap();
+    let who = actor(&conn, &headers)?;
+    human(&conn, &who)?;
+    let mut result = Vec::new();
+    for (key, room) in rows(
+        &conn,
+        "SELECT member_key,room_id FROM matrix_dms WHERE room_id IS NOT NULL ORDER BY member_key",
+    )? {
+        let actors: Vec<String> = serde_json::from_str(&key).unwrap_or_default();
+        if actors.contains(&who) {
+            result.push(json!({"matrix_room_id":room,"actors":actors}));
+        }
+    }
+    Ok(Json(json!(result)))
+}
 #[derive(Default, Deserialize)]
 pub struct LegacyQuery {
     pub before: Option<i64>,

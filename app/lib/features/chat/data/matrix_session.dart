@@ -26,9 +26,19 @@ class MatrixSession {
   String get key =>
       'monastack.matrix.${Uri.encodeComponent(node)}.${Uri.encodeComponent(actor)}';
 
+  /// Kept apart from the session so a re-login reuses the same Synapse device.
+  String get deviceKey => '$key.device';
+
   Future<Client?> open() async {
     final generation = _generation;
-    final config = await request('GET', '/v1/chat/config') as Map;
+    final Map config;
+    try {
+      config = await request('GET', '/v1/chat/config') as Map;
+    } on NodeFailure catch (e) {
+      // A node on code without chat has no such route: same as chat disabled.
+      if (e.status == 404) return null;
+      rethrow;
+    }
     if (generation != _generation || config['enabled'] != true) return null;
     final home = parseOfficeEndpoint(config['homeserver_url']);
     if (home == null) throw const FormatException('Invalid chat address');
@@ -104,12 +114,14 @@ class MatrixSession {
     final result = await sdk.login(
       'org.matrix.login.jwt',
       token: session['login_token'] as String,
+      deviceId: await store.read(deviceKey),
       initialDeviceDisplayName: 'Monastack macOS',
     );
     if (generation != _generation || result.userId != session['user_id']) {
       await sdk.logout();
       throw StateError('Wrong chat user');
     }
+    await store.write(deviceKey, result.deviceId);
     await store.write(
       key,
       jsonEncode({
@@ -131,6 +143,7 @@ class MatrixSession {
     // Forget locally even when the homeserver is offline.
     try {
       await store.delete(key);
+      await store.delete(deviceKey);
     } finally {
       try {
         await client?.logout();

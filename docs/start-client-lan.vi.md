@@ -49,4 +49,4 @@ Khi IP server thay đổi, cập nhật file trên, dừng rồi chạy lại `t
 
 ## Matrix chat
 
-App lấy địa chỉ Matrix từ `GET /v1/chat/config` qua node hiện tại. Server cần quảng bá `MONASTACK_MATRIX_PUBLIC_URL=http://<IP-LAN-server>:8008` và mở cổng 8008 cho client. Client không cần container hoặc thông tin admin. Không mở cổng 8009 ra LAN. Xem [Matrix chat operations](matrix-chat-operations.md).
+App lấy địa chỉ Matrix từ `GET /v1/chat/config` qua node hiện tại. Server phải được khởi động với IP LAN của nó (`MONASTACK_SERVER_HOST=<IP-LAN-server>`), không phải 127.0.0.1, nếu không client báo "Chat could not connect". Server cần quảng bá `MONASTACK_MATRIX_PUBLIC_URL=http://<IP-LAN-server>:8008` và mở cổng 8008 cho client. Client không cần container hoặc thông tin admin. Không mở cổng 8009 ra LAN. Xem [Matrix chat operations](matrix-chat-operations.md).

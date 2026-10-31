@@ -1,6 +1,6 @@
 # Matrix chat operations
 
-Status: built, validation in [Lane S validation](matrix-lane-s-report.md). Date: 2026-10-31. Audience: local workspace operators. Share boundary: repository collaborators. Owner: not assigned.
+Status: built. Date: 2026-10-31. Audience: local workspace operators. Share boundary: repository collaborators. Owner: not assigned.
 
 ## 1. Start and inspect
 
@@ -10,12 +10,12 @@ Run from the server checkout. Docker is required for Matrix. Zellij is used when
 cargo build --locked --manifest-path backend/office-node/Cargo.toml
 mkdir -p runtime
 cp -n .env.example runtime/.env
-MONASTACK_SERVER_HOST=127.0.0.1 python3 tools/local_office.py start --no-app
+MONASTACK_SERVER_HOST=<server-lan-ip> python3 tools/local_office.py start --no-app
 python3 tools/local_office.py status
 zellij attach monastack-matrix-server
 ```
 
-- **Choose a reachable advertised host**: replace `127.0.0.1` with this server's private LAN address for other machines. `runtime/server-address.json` remains the default when no host override is supplied. An explicit `MONASTACK_MATRIX_PUBLIC_URL` takes precedence.
+- **Start the server with its LAN IP, never 127.0.0.1**: set `MONASTACK_SERVER_HOST=<server-lan-ip>` or `MONASTACK_MATRIX_PUBLIC_URL=http://<server-lan-ip>:8008`. A server started with 127.0.0.1 advertises `homeserver_url` 127.0.0.1:8008, so the apps on other machines cannot reach chat and show "Chat could not connect". Check with `curl -H "Authorization: Bearer <token>" http://<server-lan-ip>:47830/v1/chat/config`. `runtime/server-address.json` remains the default when no host override is supplied. An explicit `MONASTACK_MATRIX_PUBLIC_URL` takes precedence.
 - **Preserve the existing runtime**: startup reuses its owned healthy services. It refuses occupied ports. It does not kill unrelated processes or overwrite existing workspace databases.
 - **Inspect service output directly**: the `Services` tab contains named foreground command panes. This host has a Zellij 0.45.1 bug where no-focus command tabs remain empty. Named panes preserve the bundled tab bar and status hints without stealing focus. `BE-api` runs authority 47830 and realtime 47831. `BE-member` runs proxy 47840. `Matrix-client` runs the gateway on 8008. `Matrix-synapse` follows the container whose upstream is loopback 8009. `Matrix-postgres` follows the unpublished database container. `LiveKit-server` follows the existing LiveKit container.
 - **Run offices without Docker**: use `python3 tools/local_office.py start --no-matrix --no-app`. The authority and member start with chat disabled. LiveKit is skipped when Docker is absent. Stop before changing modes. Status and stop also work without Docker.
@@ -28,7 +28,7 @@ Use the stack script to stop its own services.
 
 ```sh
 python3 tools/local_office.py stop
-MONASTACK_SERVER_HOST=127.0.0.1 python3 tools/local_office.py start --no-app
+MONASTACK_SERVER_HOST=<server-lan-ip> python3 tools/local_office.py start --no-app
 ```
 
 - **Upgrade the existing Matrix layout**: stop before the first upgraded start. Startup preserves Postgres data and moves the signing key and attachments under `runtime/matrix/synapse/`. It recreates only this runtime's stopped containers to adopt the pinned Synapse image and narrow mounts. Never downgrade a migrated Synapse database without a matching backup.
