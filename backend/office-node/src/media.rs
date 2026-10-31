@@ -284,7 +284,25 @@ impl MediaControl {
         let mut rooms = self.rooms.lock().await;
         let media = rooms.entry(room.to_owned()).or_default();
         let generation = match media.gate.phase() {
-            Phase::Active if media.epoch == epoch => media.gate.generation(),
+            Phase::Active if media.epoch == epoch => {
+                // LiveKit closes empty rooms independently of this in-memory gate.
+                // Rotate missing rooms so old join tokens cannot target the replacement.
+                let name = media.name.as_deref().ok_or_else(unavailable)?;
+                let listed = self
+                    .config
+                    .rpc("ListRooms", json!({"names": [name]}), None)
+                    .await
+                    .map_err(|_| unavailable())?;
+                let exists = listed["rooms"]
+                    .as_array()
+                    .is_some_and(|rooms| rooms.iter().any(|r| r["name"] == name));
+                if exists {
+                    media.gate.generation()
+                } else {
+                    self.stop(media, epoch).await.map_err(|_| unavailable())?;
+                    self.start(media, room).await.map_err(|_| unavailable())?
+                }
+            }
             Phase::Starting if media.epoch == epoch && media.name.is_none() => {
                 self.start(media, room).await.map_err(|_| unavailable())?
             }
@@ -376,6 +394,69 @@ mod tests {
             .decode(parts[1])
             .unwrap();
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn expired_rooms_rotate_before_new_grants_and_api_failures_deny_issuance() {
+        use axum::{
+            extract::{Path, State},
+            routing::post,
+            Json, Router,
+        };
+        #[derive(Default)]
+        struct Mock {
+            rooms: std::collections::HashSet<String>,
+            fail: bool,
+        }
+        type Shared = Arc<Mutex<Mock>>;
+        async fn rpc(
+            State(state): State<Shared>,
+            Path(method): Path<String>,
+            Json(body): Json<Value>,
+        ) -> Result<Json<Value>, StatusCode> {
+            let mut mock = state.lock().unwrap();
+            if mock.fail {
+                return Err(StatusCode::SERVICE_UNAVAILABLE);
+            }
+            match method.as_str() {
+                "ListRooms" => Ok(Json(
+                    json!({"rooms": mock.rooms.iter().map(|name| json!({"name":name})).collect::<Vec<_>>()}),
+                )),
+                "CreateRoom" => {
+                    mock.rooms.insert(body["name"].as_str().unwrap().into());
+                    Ok(Json(body))
+                }
+                "DeleteRoom" => {
+                    mock.rooms.remove(body["room"].as_str().unwrap());
+                    Ok(Json(json!({})))
+                }
+                _ => Err(StatusCode::NOT_FOUND),
+            }
+        }
+        let mock = Arc::new(Mutex::new(Mock::default()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut config = config();
+        config.api = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/twirp/livekit.RoomService/{method}", post(rpc))
+            .with_state(mock.clone());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let control = MediaControl::new(config);
+        control.ready.store(true, Ordering::SeqCst);
+        let first = control.issue("lobby", "an", "session-1", 1).await.unwrap();
+        let same = control
+            .issue_agent("lobby", "mona", "lease-1", 1)
+            .await
+            .unwrap();
+        assert_eq!(first.room, same.room);
+        mock.lock().unwrap().rooms.clear();
+        let recovered = control.issue("lobby", "an", "session-2", 1).await.unwrap();
+        assert_ne!(first.room, recovered.room);
+        assert_eq!(claims(&recovered.token)["video"]["room"], recovered.room);
+        assert!(!mock.lock().unwrap().rooms.contains(&first.room));
+        mock.lock().unwrap().fail = true;
+        assert!(control.issue("lobby", "an", "session-3", 1).await.is_err());
+        server.abort();
     }
 
     #[test]

@@ -93,10 +93,22 @@ void main() {
       seconds: 45,
     );
     mark('Lobby — live agent greeting');
-    await wait(23);
+    await until(
+      () => (collaboration.liveAgent?['captions'] as List? ?? []).isNotEmpty,
+      'Lobby voice greeting',
+      seconds: 45,
+    );
+    await wait(12);
     mark('Walk into Dev & QA — live voice');
     unawaited(world.goToRoom('dev'));
-    await wait(28);
+    await until(
+      () =>
+          collaboration.widget.room == 'dev' &&
+          (collaboration.liveAgent?['captions'] as List? ?? []).isNotEmpty,
+      'Dev voice greeting',
+      seconds: 45,
+    );
+    await wait(12);
     mark('Projects and task board');
     unawaited(collaboration.openTool('tasks'));
     await until(
@@ -191,7 +203,8 @@ void main() {
       () =>
           collaboration.chatController?.room?.officeRoom ==
               collaboration.widget.room &&
-          collaboration.chatController?.error == null,
+          collaboration.chatController?.error == null &&
+          collaboration.chatController?.loading == false,
       'current room conversation',
     );
     await wait(12);
