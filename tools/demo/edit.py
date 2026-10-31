@@ -39,7 +39,7 @@ def main():
         inputs+=['-i',str(audio)]
         graph.append(f'[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,loudnorm=I=-18:TP=-2:LRA=7,adelay={int(start*1000)}|{int(start*1000)}[n{i}]')
     graph.append('[0:a]'+''.join(f'[n{i}]' for i in range(1,len(clips)+1))+f'amix=inputs={len(clips)+1}:duration=first:normalize=0[narration]')
-    run(inputs+['-filter_complex',';'.join(graph),'-map','[narration]','-c:a','pcm_s16le',str(folder/'narration.wav')])
+    run(inputs+['-filter_complex',';'.join(graph),'-map','[narration]','-c:a','pcm_s16le','-ar','48000',str(folder/'narration.wav')])
     font=ROOT/'app/assets/fonts/inter-4.1/InterVariable.ttf'
     video=['scale=1480:-2','pad=1920:1080:(ow-iw)/2:60:color=0xf7f5ef']
     for i,chapter in enumerate(chapters[:-1]):
@@ -58,6 +58,6 @@ def main():
         video.append(f"drawtext=fontfile='{font}':textfile='{path}':fontcolor=white:fontsize=22:line_spacing=5:x=244:y=1007:enable='between(t,{start},{end})'")
     filters='[0:v]'+','.join(video)+'[v];[1:a]asplit[narr][side];[0:a][side]sidechaincompress=threshold=0.025:ratio=6:attack=10:release=250[bed];[bed][narr]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]'
     script=folder/'edit-filter.txt';script.write_text(filters)
-    run(['ffmpeg','-hide_banner','-loglevel','warning','-y','-i',str(raw),'-i',str(folder/'narration.wav'),'-filter_complex_script',str(script),'-map','[v]','-map','[a]','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-movflags','+faststart',str(folder/'monastack-demo-narrated.mp4')])
+    run(['ffmpeg','-hide_banner','-loglevel','warning','-y','-i',str(raw),'-i',str(folder/'narration.wav'),'-filter_complex_script',str(script),'-map','[v]','-map','[a]','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ar','48000','-movflags','+faststart',str(folder/'monastack-demo-narrated.mp4')])
     print(folder/'monastack-demo-narrated.mp4')
 if __name__=='__main__': main()

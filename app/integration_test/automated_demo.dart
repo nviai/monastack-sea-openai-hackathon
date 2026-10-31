@@ -49,8 +49,15 @@ void main() {
     }
 
     Future<void> tap(Finder finder) async {
-      await tester.ensureVisible(finder.last);
-      await tester.tap(finder.last);
+      await Scrollable.ensureVisible(
+        tester.element(finder.last),
+        alignment: .5,
+      );
+      await wait(.35);
+      if (finder.hitTestable().evaluate().isEmpty) {
+        throw StateError('Demo control is not visible: $finder');
+      }
+      await tester.tap(finder.hitTestable().last);
       await wait(1);
     }
 
@@ -97,12 +104,15 @@ void main() {
       'project cards',
     );
     await wait(5);
-    await tap(find.text('Meslingo'));
+    await tap(find.byKey(const ValueKey('project-demo-meslingo-v1')));
     await wait(8);
-    await tap(find.text('VibeKOL'));
+    await tap(find.byKey(const ValueKey('project-demo-vibekol-v1')));
     await wait(6);
-    await tap(find.text('OmitX'));
+    await tap(find.byKey(const ValueKey('project-demo-omitx-v1')));
     await wait(6);
+    if (!Navigator.of(collaboration.context).canPop()) {
+      throw StateError('Expected an open demo panel');
+    }
     Navigator.of(collaboration.context).pop();
     await wait(1);
     mark('Assign a task to Atlas');
@@ -121,6 +131,9 @@ void main() {
     await wait(4);
     await tap(find.text('Propose'));
     await wait(5);
+    if (!Navigator.of(collaboration.context).canPop()) {
+      throw StateError('Expected an open demo panel');
+    }
     Navigator.of(collaboration.context).pop();
     await wait(1);
     mark('Ask an agent to open the task board');
@@ -142,11 +155,17 @@ void main() {
       seconds: 65,
     );
     await wait(8);
+    if (!Navigator.of(collaboration.context).canPop()) {
+      throw StateError('Expected an open demo panel');
+    }
     Navigator.of(collaboration.context).pop();
     await wait(1);
     // Close the originating agent chat after viewing the opened board.
     await wait(2);
     if (find.byTooltip('Close').evaluate().isNotEmpty) {
+      if (!Navigator.of(collaboration.context).canPop()) {
+        throw StateError('Expected an open demo panel');
+      }
       Navigator.of(collaboration.context).pop();
       await wait(1);
     }
@@ -154,6 +173,9 @@ void main() {
     unawaited(collaboration.openTool('notifications'));
     await wait(6);
     if (find.byTooltip('Close').evaluate().isNotEmpty) {
+      if (!Navigator.of(collaboration.context).canPop()) {
+        throw StateError('Expected an open demo panel');
+      }
       Navigator.of(collaboration.context).pop();
       await wait(1);
     } else if (find.text('Close').evaluate().isNotEmpty) {
