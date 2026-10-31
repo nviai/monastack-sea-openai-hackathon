@@ -47,19 +47,15 @@ void main() {
         .widget<TextButton>(find.widgetWithText(TextButton, 'Connect'))
         .onPressed!();
     await until(
-      () => find.textContaining('Join voice in Lobby').evaluate().isNotEmpty,
-      'voice offered for the lobby',
+      () => find.byType(VoicePanel).evaluate().isNotEmpty,
+      'media controls available in lobby',
     );
     VoiceController voice() =>
         tester.widget<VoicePanel>(find.byType(VoicePanel)).controller;
-    tester
-        .widget<TextButton>(
-          find.ancestor(
-            of: find.textContaining('Join voice in Lobby'),
-            matching: find.byWidgetPredicate((w) => w is TextButton),
-          ),
-        )
-        .onPressed!();
+    expect(find.byTooltip('Turn camera on'), findsOneWidget);
+    expect(find.byTooltip('Unmute microphone'), findsOneWidget);
+    // Connect with capture off to verify the synthetic peer without using devices.
+    voice().join('lobby');
     await until(
       () => voice().value.phase == VoicePhase.joined,
       'joined lobby voice',

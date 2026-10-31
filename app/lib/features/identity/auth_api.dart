@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:monastack/shared/office_endpoint.dart';
+
 /// A refused identity request, with the node's explanation.
 class AuthFailure implements Exception {
   const AuthFailure(this.status, this.message);
@@ -10,7 +12,7 @@ class AuthFailure implements Exception {
 
   /// Short text for people, by status.
   String get friendly => switch (status) {
-    0 => 'The local node is not reachable.',
+    0 => 'The office server is not reachable.',
     401 => 'Wrong username or password.',
     403 => message.isEmpty ? 'Not allowed.' : _sentence(message),
     429 => 'Too many attempts. Try again in a few minutes.',
@@ -51,14 +53,17 @@ class SignedIn {
   final String workspaceName;
 }
 
-/// HTTP client for the node's identity endpoints (ADR 0008). Only loopback
-/// nodes are used; a remote master is reached by the node, not the app.
+/// HTTP client for identity endpoints on a loopback or configured LAN node.
 class AuthApi {
-  AuthApi({required this.port, HttpClient? client})
-    : _client =
+  AuthApi({required this.port, String? host, HttpClient? client})
+    : host = officeHost(
+        host ?? Platform.environment['MONASTACK_NODE_HOST'] ?? '127.0.0.1',
+      ),
+      _client =
           client ??
           (HttpClient()..connectionTimeout = const Duration(seconds: 3));
 
+  final String host;
   final int port;
   final HttpClient _client;
 
@@ -82,7 +87,7 @@ class AuthApi {
     final HttpClientResponse response;
     try {
       final request = await _client
-          .openUrl(method, Uri.parse('http://127.0.0.1:$port$path'))
+          .openUrl(method, Uri.parse('http://$host:$port$path'))
           .timeout(const Duration(seconds: 4));
       if (bearer != null) {
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');

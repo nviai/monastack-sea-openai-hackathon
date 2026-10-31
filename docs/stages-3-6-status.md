@@ -1,5 +1,8 @@
 # Later-stage prototype slices
 
+Update: direct conversational OpenAI agents are now implemented separately from the proposal/host execution pipeline described below. See [OpenAI office chat](openai-agents.md). Real provider execution still requires a configured API key; the Codex worker remains a synthetic experiment.
+
+
 None of Stages 3–6 is complete. These slices run inside the existing loopback office-node prototype and inherit the limits in `stage-1-status.md`: no production identity, TLS, encrypted storage, device enrollment, general access-management UI, a general-purpose client outbox, or remote deployment. The limited task outbox is described in `stage-2-status.md`. All records below are stored as server-readable SQLite data. They are not suitable for confidential or production use.
 
 ## Stage 3: agent proposals

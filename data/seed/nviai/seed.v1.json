@@ -3,7 +3,7 @@
   "workspace": {
     "id": "nviai",
     "name": "NVIAI Smart Technology",
-    "legal_name": "CÔNG TY TNHH CÔNG NGHỆ THÔNG MINH NVIAI",
+    "legal_name": "NVIAI SMART TECHNOLOGY COMPANY LIMITED",
     "english_legal_name": "NVIAI SMART TECHNOLOGY COMPANY LIMITED",
     "short_name": "NVIAI CO., LTD.",
     "tax_code": "0317645141",
@@ -16,56 +16,56 @@
   "actors": [
     {
       "id": "an",
-      "name": "Nguyễn Văn An",
+      "name": "Nguyen Van An",
       "email": "an@nviai.com",
       "role": "org-admin",
       "kind": "human"
     },
     {
       "id": "thao",
-      "name": "Đỗ Phương Thảo",
+      "name": "Do Phuong Thao",
       "email": "thao@nviai.com",
       "role": "pm",
       "kind": "human"
     },
     {
       "id": "hung",
-      "name": "Vũ Mạnh Hùng",
+      "name": "Vu Manh Hung",
       "email": "hung@nviai.com",
       "role": "dev",
       "kind": "human"
     },
     {
       "id": "tuan",
-      "name": "Trần Anh Tuấn",
+      "name": "Tran Anh Tuan",
       "email": "tuan@nviai.com",
       "role": "dev",
       "kind": "human"
     },
     {
       "id": "linh",
-      "name": "Phạm Khánh Linh",
+      "name": "Pham Khanh Linh",
       "email": "linh@nviai.com",
       "role": "qa",
       "kind": "human"
     },
     {
       "id": "mai",
-      "name": "Lê Thị Mai",
+      "name": "Le Thi Mai",
       "email": "mai@nviai.com",
       "role": "sales",
       "kind": "human"
     },
     {
       "id": "duc",
-      "name": "Hoàng Minh Đức",
+      "name": "Hoang Minh Duc",
       "email": "duc@nviai.com",
       "role": "cs",
       "kind": "human"
     },
     {
       "id": "van",
-      "name": "Ngô Thu Vân",
+      "name": "Ngo Thu Van",
       "email": "van@nviai.com",
       "role": "accountant",
       "kind": "human"
@@ -74,22 +74,25 @@
       "id": "le-pha",
       "name": "Pha Le",
       "email": "le.pha@nviai.com",
-      "role": "dev",
-      "kind": "human"
+      "role": "ceo",
+      "kind": "human",
+      "username": "pha.le"
     },
     {
       "id": "hua-hao",
       "name": "Hao Hua",
       "email": "hua.hao@nviai.com",
-      "role": "dev, pm",
-      "kind": "human"
+      "role": "cto",
+      "kind": "human",
+      "username": "hao.hua"
     },
     {
       "id": "le-triet",
       "name": "Triet Le",
       "email": "le.triet@nviai.com",
-      "role": "dev, qa",
-      "kind": "human"
+      "role": "org-admin",
+      "kind": "human",
+      "username": "triet.le"
     },
     {
       "id": "mona",

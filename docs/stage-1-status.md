@@ -20,7 +20,7 @@ See [the acceptance tracker](stage-1-acceptance.md) for item-by-item evidence, a
 | Media server: self-hosted LiveKit 1.13.10 in Docker | voice | `backend/media/livekit-dev.sh start` |
 | Process node / agent host | nothing in Stage 1 | optional, see `stages-3-6-status.md` |
 
-Without a node, the app is a **local preview**: the map, room list, people and seed policy work, but there is no presence, chat or voice. Without LiveKit, presence and chat work and the voice panel says voice is unavailable and points to room chat. Without the realtime service, chat works and the panel says presence is unavailable. Remote collaboration needs these services reachable over a secured network, which this topology does not provide.
+Before authentication, the app shows only the sign-in screen. The office map, rooms, people and avatars appear only after the node verifies the user. Without a reachable node, the app stays on the sign-in screen. Without LiveKit, presence and chat work and the voice panel says voice is unavailable and points to room chat. Without the realtime service, chat works and the panel says presence is unavailable. Remote collaboration needs these services reachable over a secured network, which this topology does not provide.
 
 ## Run on macOS
 
@@ -30,13 +30,13 @@ Tested on Apple M6 / 32 GiB, macOS 27.0.1, Flutter 3.47.7 / Dart 3.13.5, Xcode 2
 cargo build --manifest-path core/Cargo.toml
 cargo build --manifest-path backend/office-node/Cargo.toml
 umask 077
-export MONASTACK_DB="$PWD/office.sqlite3"
+export MONASTACK_DB="$PWD/runtime/db/office.sqlite3"
 
 # Optional voice: starts LiveKit on 127.0.0.1:7880-7882 with random local credentials.
 # If the repository is on a volume Docker Desktop does not share (for example under /Volumes),
-# first run: export MONASTACK_DEV_DIR="$HOME/.monastack-dev" and use that path for the key file below.
+# first run: export MONASTACK_DEV_DIR="$HOME/monastack-runtime/media" and use that path for the key file below.
 backend/media/livekit-dev.sh start
-export MONASTACK_MEDIA_URL=ws://127.0.0.1:7880 MONASTACK_MEDIA_KEY_FILE="$PWD/.monastack-dev/media.key"
+export MONASTACK_MEDIA_URL=ws://127.0.0.1:7880 MONASTACK_MEDIA_KEY_FILE="$PWD/runtime/media/media.key"
 
 export MONASTACK_REALTIME_PORT=47831   # embedded realtime; ephemeral if unset
 backend/office-node/target/debug/monastack-office-node

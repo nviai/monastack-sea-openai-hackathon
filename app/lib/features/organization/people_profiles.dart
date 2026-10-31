@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:monastack/shared/actor_role.dart';
 
 /// Presence is filtered by the node; absence does not prove someone is offline.
 class PeopleProfiles extends StatelessWidget {
@@ -7,10 +8,12 @@ class PeopleProfiles extends StatelessWidget {
     required this.actors,
     required this.remote,
     required this.connectedActor,
+    this.onChatAgent,
   });
   final List<Map<String, dynamic>> actors;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
   final String? connectedActor;
+  final void Function(String)? onChatAgent;
 
   @override
   Widget build(
@@ -22,14 +25,14 @@ class PeopleProfiles extends StatelessWidget {
         final isAgent = actor['kind'] == 'agent';
         final visible = presence.any((entry) => entry['actor'] == actor['id']);
         final status = isAgent
-            ? 'Agent · offline'
+            ? 'Agent · click to chat'
             : connectedActor == null
-            ? '${actor['role']} · status unavailable'
+            ? '${actorRoleLabel(actor['role'])} · status unavailable'
             : actor['id'] == connectedActor
-            ? '${actor['role']} · this session'
+            ? '${actorRoleLabel(actor['role'])} · this session'
             : visible
-            ? '${actor['role']} · visible in office'
-            : '${actor['role']} · not currently visible';
+            ? '${actorRoleLabel(actor['role'])} · visible in office'
+            : '${actorRoleLabel(actor['role'])} · not currently visible';
         return Material(
           color: Colors.transparent,
           child: ListTile(
@@ -45,7 +48,8 @@ class PeopleProfiles extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(status, style: const TextStyle(fontSize: 11)),
-            onTap: () => showActorProfile(context, actor),
+            onTap: () =>
+                showActorProfile(context, actor, onChatAgent: onChatAgent),
           ),
         );
       }).toList(),
@@ -56,17 +60,27 @@ class PeopleProfiles extends StatelessWidget {
 /// Profile dialog shared by the people list and the office canvas.
 Future<void> showActorProfile(
   BuildContext context,
-  Map<String, dynamic> actor,
-) {
+  Map<String, dynamic> actor, {
+  void Function(String)? onChatAgent,
+}) {
   final isAgent = actor['kind'] == 'agent';
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(actor['name'] as String),
       content: Text(
-        '${actor['kind']} · ${actor['role']}\n${isAgent ? 'No runtime connected.' : 'Presence is filtered by room access; absence does not imply offline.'}',
+        '${actor['kind']} · ${actorRoleLabel(actor['role'])}\n${isAgent ? 'Chat with this agent through OpenAI.' : 'Presence is filtered by room access; absence does not imply offline.'}',
       ),
       actions: [
+        if (isAgent && onChatAgent != null)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onChatAgent(actor['id'] as String);
+            },
+            child: const Text('Chat with agent'),
+          ),
+
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Close'),

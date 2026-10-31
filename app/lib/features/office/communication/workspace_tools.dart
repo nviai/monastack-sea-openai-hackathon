@@ -7,6 +7,7 @@ const _groups = <(String, List<_Tool>)>[
     'Work',
     [
       (id: 'tasks', label: 'Open task board', icon: Icons.view_kanban_outlined),
+      (id: 'agent-chat', label: 'Chat with agents', icon: Icons.chat_outlined),
       (id: 'agents', label: 'Agent proposals', icon: Icons.smart_toy_outlined),
       (
         id: 'room-admin',

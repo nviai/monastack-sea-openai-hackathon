@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -73,6 +74,67 @@ void main() {
       'ticket': 't',
       'expires_in': 30,
       'realtime_url': 'http://127.0.0.1:${server.port}',
+    },
+  );
+
+  for (final camera in [false, true]) {
+    test('device button auto-connects from lobby: camera=$camera', () async {
+      final (server, requests) = await fakeRealtime(() => [200]);
+      addTearDown(() => server.close(force: true));
+      final connection = FakeConnection();
+      final voice = VoiceController(
+        realtime: session(server),
+        session: () => 'session-1',
+        connector: (_, _) async => connection,
+      );
+      addTearDown(voice.dispose);
+      await voice.refreshAvailability();
+      expect(voice.value.phase, VoicePhase.idle);
+      if (camera) {
+        await voice.toggleCamera('lobby');
+      } else {
+        await voice.toggleMicrophone('lobby');
+      }
+      expect(voice.value.phase, VoicePhase.joined);
+      expect(connection.camera, camera);
+      expect(connection.microphone, !camera);
+      expect(requests.single['room'], 'lobby');
+      if (camera) {
+        await voice.toggleCamera('lobby');
+      } else {
+        await voice.toggleMicrophone('lobby');
+      }
+      expect(connection.camera, isFalse);
+      expect(connection.microphone, isFalse);
+      expect(requests.length, 1);
+    });
+  }
+
+  test(
+    'leaving while a device button connects cannot re-enable capture',
+    () async {
+      final (server, _) = await fakeRealtime(() => [200]);
+      addTearDown(() => server.close(force: true));
+      final started = Completer<void>();
+      final ready = Completer<VoiceConnection>();
+      final connection = FakeConnection();
+      final voice = VoiceController(
+        realtime: session(server),
+        session: () => 'session-1',
+        connector: (_, _) {
+          started.complete();
+          return ready.future;
+        },
+      );
+      addTearDown(voice.dispose);
+      final pending = voice.toggleCamera('lobby');
+      await started.future;
+      await voice.leave();
+      ready.complete(connection);
+      await pending;
+      expect(voice.value.phase, VoicePhase.idle);
+      expect(connection.camera, isFalse);
+      expect(connection.closed, isTrue);
     },
   );
 

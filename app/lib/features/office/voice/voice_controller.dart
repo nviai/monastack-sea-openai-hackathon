@@ -1,3 +1,5 @@
+import 'package:monastack/shared/office_endpoint.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -135,9 +137,35 @@ class VoiceController extends ValueNotifier<VoiceState> {
 
   Future<void> leave() async {
     _wanted = false;
+    _attempt++;
     await _drop();
     if (!_disposed && value.phase != VoicePhase.unavailable) {
       value = const VoiceState(phase: VoicePhase.idle);
+    }
+  }
+
+  /// A device button connects media on demand, including from the lobby.
+  Future<void> toggleMicrophone(String room) async {
+    if (_disposed || value.phase == VoicePhase.joining) return;
+    final enabled = !value.microphone;
+    if (enabled && value.phase != VoicePhase.joined) await join(room);
+    if (!_disposed &&
+        _wanted &&
+        _target == room &&
+        value.phase == VoicePhase.joined) {
+      await setMicrophone(enabled);
+    }
+  }
+
+  Future<void> toggleCamera(String room) async {
+    if (_disposed || value.phase == VoicePhase.joining) return;
+    final enabled = !value.camera;
+    if (enabled && value.phase != VoicePhase.joined) await join(room);
+    if (!_disposed &&
+        _wanted &&
+        _target == room &&
+        value.phase == VoicePhase.joined) {
+      await setCamera(enabled);
     }
   }
 
@@ -205,8 +233,8 @@ class VoiceController extends ValueNotifier<VoiceState> {
           'session': session(),
         }) as Map<String, dynamic>;
         final url = grant['url'];
-        if (url is! String ||
-            !url.startsWith('ws://127.0.0.1:') ||
+        if (parseOfficeEndpoint(url, scheme: 'ws') == null ||
+            url is! String ||
             grant['token'] is! String) {
           throw const FormatException('invalid media grant');
         }

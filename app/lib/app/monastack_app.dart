@@ -41,7 +41,7 @@ class Office extends ConsumerStatefulWidget {
 }
 
 class _OfficeState extends ConsumerState<Office> {
-  String actor = 'an';
+  String actor = '';
   String? connectedActor;
 
   /// Company name of the signed-in workspace; the seed's name otherwise.
@@ -49,6 +49,7 @@ class _OfficeState extends ConsumerState<Office> {
   List<String>? serverRooms;
   String room = 'lobby';
   String? notice;
+  final collaborationKey = GlobalKey<CollaborationState>();
   final worldKey = GlobalKey<OfficeWorldState>();
 
   /// Unknown until the office map loads and reports the spawn cell; presence
@@ -67,18 +68,9 @@ class _OfficeState extends ConsumerState<Office> {
   }
 
   void enter(Map<String, dynamic> seed, Map<String, dynamic> target) {
-    final core = ref.read(officeCoreProvider).value;
-    if (connectedActor == null && core == null) {
-      setState(
-        () => notice =
-            'Rust core unavailable. Rebuild the app; access is denied.',
-      );
-      return;
-    }
+    if (connectedActor == null) return;
     try {
-      final allowed = connectedActor != null
-          ? (serverRooms?.contains(target['id']) ?? false)
-          : core!.mayEnter(actor: actor, room: target['id'] as String);
+      final allowed = serverRooms?.contains(target['id']) ?? false;
       if (!allowed) {
         setState(
           () => notice =
@@ -96,16 +88,16 @@ class _OfficeState extends ConsumerState<Office> {
     }
   }
 
-  /// Plans with the room snapshot from the node while connected, otherwise
-  /// with the seed preview policy.
+  /// Movement uses the authenticated node's current room permissions.
   Future<List<List<int>>?> findPath(List<int> start, List<int> goal) async {
+    if (connectedActor == null) return null;
     final core = await ref.read(officeCoreProvider.future);
     try {
       final route = await core.findPath(
         actor: actor,
         start: Cell(x: start[0], y: start[1]),
         goal: Cell(x: goal[0], y: goal[1]),
-        allowedRooms: connectedActor == null ? null : (serverRooms ?? []),
+        allowedRooms: serverRooms ?? [],
       );
       return [
         for (final cell in route) [cell.x, cell.y],
@@ -116,18 +108,10 @@ class _OfficeState extends ConsumerState<Office> {
     }
   }
 
-  /// Rooms the viewer may enter: the node's snapshot while connected,
-  /// otherwise the seed preview policy. `null` while the core is loading.
-  Set<String>? accessibleRooms(List<Map<String, dynamic>> rooms) {
-    if (connectedActor != null) return {...?serverRooms};
-    final core = ref.watch(officeCoreProvider).value;
-    if (core == null) return null;
-    return {
-      for (final r in rooms)
-        if (core.mayEnter(actor: actor, room: r['id'] as String))
-          r['id'] as String,
-    };
-  }
+  /// The node supplies room access after sign-in; no preview permissions.
+  Set<String> accessibleRooms(List<Map<String, dynamic>> rooms) => {
+    ...?serverRooms,
+  };
 
   String? locateRoom(List<int> cell) => ref
       .read(officeCoreProvider)
@@ -147,6 +131,82 @@ class _OfficeState extends ConsumerState<Office> {
             final rooms = (data['rooms'] as List).cast<Map<String, dynamic>>();
             final actors = (data['actors'] as List)
                 .cast<Map<String, dynamic>>();
+            final collaboration = Collaboration(
+              key: collaborationKey,
+              room: room,
+              position: position,
+              remote: remote,
+              actors: actors,
+              rooms: rooms,
+              speaking: speaking,
+              faces: faces,
+              company: (data['workspace'] as Map?)?['name'] as String? ?? '',
+              onWorkspaceName: (name) {
+                if (name != workspaceName && mounted) {
+                  setState(() => workspaceName = name);
+                }
+              },
+              onPermissions: (rooms) {
+                if (serverRooms != null &&
+                    serverRooms!.length == rooms.length &&
+                    serverRooms!.every(rooms.contains)) {
+                  return;
+                }
+                final shouldReset = !rooms.contains(room);
+                worldKey.currentState?.policyChanged(reset: shouldReset);
+                setState(() {
+                  serverRooms = List.of(rooms);
+                  if (shouldReset) {
+                    room = 'lobby';
+                    notice = 'Room access changed or the node is unavailable.';
+                  }
+                });
+              },
+              onIdentity: (id) {
+                setState(() {
+                  connectedActor = id;
+                  serverRooms = id == null ? null : [];
+                  actor = id ?? '';
+                  room = 'lobby';
+                  if (id == null) position.value = const [-1, -1];
+                });
+              },
+            );
+            if (connectedActor == null) {
+              return SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: SizedBox(
+                      width: 420,
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Center(child: MonastackLogo(size: 56)),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Welcome to Monastack',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              collaboration,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
             final selected = rooms.firstWhere((r) => r['id'] == room);
             final banner =
                 notice ??
@@ -275,7 +335,7 @@ class _OfficeState extends ConsumerState<Office> {
                           ),
                         ),
                         const Text(
-                          'LOCAL PREVIEW',
+                          'WORKSPACE SESSION',
                           style: TextStyle(
                             color: Color(0xffa9c4b7),
                             fontSize: 11,
@@ -284,7 +344,7 @@ class _OfficeState extends ConsumerState<Office> {
                         ),
                         const SizedBox(height: 5),
                         const Text(
-                          'Local node optional',
+                          'Signed in',
                           style: TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],
@@ -320,30 +380,6 @@ class _OfficeState extends ConsumerState<Office> {
                                     ),
                                   ],
                                 ),
-                              ),
-                              const Text('Preview as  '),
-                              DropdownButton<String>(
-                                value: actor,
-                                items: actors
-                                    .where((a) => a['kind'] == 'human')
-                                    .map(
-                                      (a) => DropdownMenuItem(
-                                        value: a['id'] as String,
-                                        child: Text(a['name'] as String),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: connectedActor != null
-                                    ? null
-                                    : (v) {
-                                        if (v != null) {
-                                          setState(() {
-                                            actor = v;
-                                            room = 'lobby';
-                                            notice = null;
-                                          });
-                                        }
-                                      },
                               ),
                             ],
                           ),
@@ -383,7 +419,13 @@ class _OfficeState extends ConsumerState<Office> {
                                       .where((a) => a['id'] == id)
                                       .firstOrNull;
                                   if (profile != null) {
-                                    showActorProfile(context, profile);
+                                    showActorProfile(
+                                      context,
+                                      profile,
+                                      onChatAgent: (id) => collaborationKey
+                                          .currentState
+                                          ?.openAgentChat(id),
+                                    );
                                   }
                                 },
                                 onPosition: (p, nextRoom) {
@@ -437,54 +479,12 @@ class _OfficeState extends ConsumerState<Office> {
                             actors: actors,
                             remote: remote,
                             connectedActor: connectedActor,
+                            onChatAgent: (id) => collaborationKey.currentState
+                                ?.openAgentChat(id),
                           ),
                         ),
                         const Divider(),
-                        Collaboration(
-                          room: room,
-                          position: position,
-                          remote: remote,
-                          actors: actors,
-                          rooms: rooms,
-                          speaking: speaking,
-                          faces: faces,
-                          company:
-                              (data['workspace'] as Map?)?['name'] as String? ??
-                              '',
-                          onWorkspaceName: (name) {
-                            if (name != workspaceName && mounted) {
-                              setState(() => workspaceName = name);
-                            }
-                          },
-                          onPermissions: (rooms) {
-                            if (serverRooms != null &&
-                                serverRooms!.length == rooms.length &&
-                                serverRooms!.every(rooms.contains)) {
-                              return;
-                            }
-                            final shouldReset = !rooms.contains(room);
-                            worldKey.currentState?.policyChanged(
-                              reset: shouldReset,
-                            );
-                            setState(() {
-                              serverRooms = List.of(rooms);
-                              if (shouldReset) {
-                                room = 'lobby';
-                                notice = 'Room access changed or the node is unavailable.';
-                              }
-                            });
-                          },
-                          onIdentity: (id) {
-                            setState(() {
-                              connectedActor = id;
-                              serverRooms = id == null ? null : [];
-                              if (id != null) {
-                                actor = id;
-                                room = 'lobby';
-                              }
-                            });
-                          },
-                        ),
+                        collaboration,
                       ],
                     ),
                   ),

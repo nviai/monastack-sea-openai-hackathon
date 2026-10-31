@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:monastack/shared/office_endpoint.dart';
+
 import 'package:monastack/shared/node_request.dart';
 
 /// Presence calls to the realtime capability. The bearer credential stays
@@ -19,19 +21,8 @@ class RealtimeSession {
   Uri? _base;
   DateTime _expires = DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// Only loopback HTTP is accepted, matching the local topology.
-  static Uri? parseBase(Object? value) {
-    if (value is! String) return null;
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        uri.scheme != 'http' ||
-        uri.host != '127.0.0.1' ||
-        !uri.hasPort ||
-        uri.path.isNotEmpty) {
-      return null;
-    }
-    return uri;
-  }
+  /// Tickets may advertise the shared server's private LAN address.
+  static Uri? parseBase(Object? value) => parseOfficeEndpoint(value);
 
   Future<void> _refresh() async {
     final issued = await issue() as Map<String, dynamic>;

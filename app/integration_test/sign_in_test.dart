@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:monastack/app/monastack_app.dart';
+import 'package:monastack/features/office/world/office_world.dart';
 
 /// Run by `backend/office-node/tests/sign_in_app.py` against a fresh node.
 /// Sets up the company, invites someone, redeems the invitation, signs in
@@ -69,6 +70,8 @@ void main() {
       () => shown(find.text('Set up company')),
       'fresh node offers company setup',
     );
+    expect(find.byType(OfficeWorld), findsNothing);
+    expect(find.text('People & agents'), findsNothing);
     press<FilledButton>('Set up company');
     await until(() => shown(find.text('Set up your company')), 'setup dialog');
     type('Setup code', setupCode);
@@ -89,6 +92,8 @@ void main() {
     type('Confirm password', password);
     press<FilledButton>('Create company');
     await until(() => shown(connected), 'connected as the first admin');
+    expect(find.byType(OfficeWorld), findsOneWidget);
+    expect(tester.widget<OfficeWorld>(find.byType(OfficeWorld)).actor, 'an');
     await until(() => shown(find.text('Synthetic Co')), 'company name shown');
     expect(find.textContaining('· an.admin'), findsOneWidget);
     debugPrint('sign-in app: company set up, signed in as admin');
@@ -118,6 +123,8 @@ void main() {
       () => shown(find.text('Sign in to Synthetic Co')),
       'signed out to the sign-in form',
     );
+    expect(find.byType(OfficeWorld), findsNothing);
+    expect(find.text('People & agents'), findsNothing);
     press<TextButton>('I have a code');
     await until(
       () => shown(find.text('Use an invitation or reset code')),
@@ -182,6 +189,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(connected, findsNothing, reason: 'no stored session after sign-out');
+    expect(find.byType(OfficeWorld), findsNothing);
+    expect(find.text('Welcome to Monastack'), findsOneWidget);
     debugPrint('sign-in app: sign-out forgot the keychain session');
   });
 }

@@ -4,7 +4,7 @@ class NodeFailure implements Exception {
   final int status;
 }
 
-/// Authenticated request to the local office node.
+/// Authenticated request to the configured office node.
 typedef NodeRequest = Future<dynamic> Function(
   String method,
   String path, [

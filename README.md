@@ -20,3 +20,21 @@ The reference documents summarize the existing project; they do not include its 
 ## Current prototype
 
 The workspace contains a macOS app (Flutter/Flame with a Rust core over `flutter_rust_bridge`), a loopback authority/sync node with company setup and password sign-in (the first node set up is the identity master; other nodes join it, ADR 0008), an embedded or separate realtime service for presence and voice control, and a self-hosted LiveKit setup for room voice and camera faces (your webcam replaces your avatar's face for people in the same room). iOS, Android, web, Windows and Linux runners exist only as scaffolds with the app icon; they have not been built or run (ADR 0007). Stage 1 is implemented and verified with automated tests on one Mac; a real-microphone two-person check, two physical Macs and a release build remain to be done manually. See [Stage 1 status](docs/stage-1-status.md) for setup, topology, trust model and tests, [the acceptance tracker](docs/stage-1-acceptance.md), and the decisions in [`docs/adr/`](docs/adr/). Later-stage slices are described in [Stage 2 status](docs/stage-2-status.md) and [Stages 3–6 status](docs/stages-3-6-status.md). These are development prototypes, not production services.
+
+## OpenAI office agents
+
+Office members can chat directly with the six agents using the OpenAI Responses API. Fill `OPENAI_API_KEY` in the `runtime/.env`, restart the office node, and choose **Chat with agent** from an agent profile. See [setup and behavior](docs/openai-agents.md).
+
+## Chạy project
+
+Xem [hướng dẫn tiếng Việt: node + app client và node server](docs/run-project.vi.md), gồm chế độ một máy, member/master và nhiều client dùng chung office node qua SSH.
+
+Default company/accounts: NVIAI is set up automatically on normal node startup. Sign in with a [seeded username](docs/seeded-accounts.md) and `NviaiSeaxOpenAIHackathon`; no password change is required. Use `MONASTACK_SEED_COMPANY=0` for manual setup or a fresh member node.
+
+Runtime files are grouped under [`runtime/`](runtime/README.md): `runtime/.env`, `runtime/db/`, `runtime/media/`, `runtime/worker/` and `runtime/backups/`.
+
+Same-machine server + member + macOS app: `python3 tools/local_office.py start`. See [ports, logs and lifecycle](docs/local-office.vi.md).
+
+Members now share the master's office records, presence and single LiveKit by default (`MONASTACK_WORKSPACE_MODE=shared`). See [shared office design](docs/adr/0009-shared-office.md).
+
+LAN client: `./tools/start-client.sh` connects to `192.168.224.217:47830`. See [client startup instructions](docs/start-client-lan.vi.md).

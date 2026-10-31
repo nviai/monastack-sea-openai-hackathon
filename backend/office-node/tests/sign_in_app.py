@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-sign-in-app-') as directory:
         port = sock.getsockname()[1]
     db = Path(directory) / 'office.sqlite3'
     log = Path(directory) / 'node.log'
-    env = {**os.environ, 'MONASTACK_DB': str(db), 'MONASTACK_NODE_PORT': str(port),
+    env = {**os.environ, 'MONASTACK_SEED_COMPANY': '0', 'MONASTACK_DB': str(db), 'MONASTACK_NODE_PORT': str(port),
            'MONASTACK_TEST_ISOLATED_OUTBOX': '1'}
     env.pop('MONASTACK_SIGN_IN', None)
     server = subprocess.Popen([str(node)], env=env, stdout=subprocess.DEVNULL, stderr=log.open('w'))

@@ -27,6 +27,7 @@ import 'package:monastack/features/office/communication/workspace_tools.dart';
 import 'package:monastack/features/office/rooms/room_membership.dart';
 import 'package:monastack/features/knowledge/document_library.dart';
 import 'package:monastack/features/agents/job_queue.dart';
+import 'package:monastack/features/agents/agent_chat.dart';
 import 'package:monastack/features/tasks/task_board.dart';
 
 import 'dart:async';
@@ -73,10 +74,35 @@ class Collaboration extends StatefulWidget {
   /// Receives the signed-in workspace's name, or `null` when signed out.
   final void Function(String?)? onWorkspaceName;
   @override
-  State<Collaboration> createState() => _CollaborationState();
+  State<Collaboration> createState() => CollaborationState();
 }
 
-class _CollaborationState extends State<Collaboration> {
+class CollaborationState extends State<Collaboration> {
+  void openAgentChat(String agent) {
+    if (!auth.active) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to chat with agents.')),
+      );
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: AgentChat(
+          request: request,
+          actors: widget.actors,
+          initialAgent: agent,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   final token = TextEditingController();
   late final AuthSession auth = AuthSession(
     api: AuthApi(port: _nodePort()),
@@ -163,14 +189,23 @@ class _CollaborationState extends State<Collaboration> {
     String credential,
   ) async {
     final req = await client
-        .openUrl(method, Uri.parse('http://127.0.0.1:${_nodePort()}$path'))
+        .openUrl(
+          method,
+          Uri.parse('http://${auth.api.host}:${_nodePort()}$path'),
+        )
         .timeout(const Duration(seconds: 3));
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $credential');
     if (body != null) {
       req.headers.contentType = ContentType.json;
       req.write(jsonEncode(body));
     }
-    final res = await req.close().timeout(const Duration(seconds: 3));
+    final res = await req.close().timeout(
+      Duration(
+        seconds: path.startsWith('/v1/agents/') && path.endsWith('/chat')
+            ? 65
+            : 3,
+      ),
+    );
     final text = await utf8.decoder
         .bind(res)
         .join()
@@ -619,13 +654,13 @@ class _CollaborationState extends State<Collaboration> {
   }
 
   @override
-  void didUpdateWidget(covariant Collaboration old) {
-    super.didUpdateWidget(old);
-    if (old.position != widget.position) {
-      old.position.removeListener(positionChanged);
+  void didUpdateWidget(covariant Collaboration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.position != widget.position) {
+      oldWidget.position.removeListener(positionChanged);
       widget.position.addListener(positionChanged);
     }
-    if (old.room != widget.room && identity != null) {
+    if (oldWidget.room != widget.room && identity != null) {
       messages = [];
       refresh();
       refreshPresence();
@@ -750,6 +785,15 @@ class _CollaborationState extends State<Collaboration> {
               'company' => CompanyAdmin(
                 request: request,
                 account: auth.account!,
+              ),
+              'agent-chat' => AlertDialog(
+                content: AgentChat(request: request, actors: widget.actors),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
               ),
               'agents' => JobQueue(request: request, actors: widget.actors),
               'room-admin' => RoomMembership(

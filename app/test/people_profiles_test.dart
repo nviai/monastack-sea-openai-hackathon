@@ -24,18 +24,18 @@ void main() {
           ),
         ),
       );
-      expect(find.text('dev · this session'), findsOneWidget);
-      expect(find.text('sales · not currently visible'), findsOneWidget);
-      expect(find.text('Agent · offline'), findsOneWidget);
+      expect(find.text('Software Engineer · this session'), findsOneWidget);
+      expect(find.text('Sales · not currently visible'), findsOneWidget);
+      expect(find.text('Agent · click to chat'), findsOneWidget);
       remote.value = [
         {'actor': 'two'},
       ];
       await tester.pump();
-      expect(find.text('sales · visible in office'), findsOneWidget);
+      expect(find.text('Sales · visible in office'), findsOneWidget);
       remote.value = [];
       await tester.pump();
-      expect(find.text('sales · visible in office'), findsNothing);
-      expect(find.text('sales · not currently visible'), findsOneWidget);
+      expect(find.text('Sales · visible in office'), findsNothing);
+      expect(find.text('Sales · not currently visible'), findsOneWidget);
       await tester.tap(find.text('Person Two'));
       await tester.pumpAndSettle();
       expect(
@@ -69,7 +69,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('sales · status unavailable'), findsOneWidget);
-    expect(find.text('sales · visible in office'), findsNothing);
+    expect(find.text('Sales · status unavailable'), findsOneWidget);
+    expect(find.text('Sales · visible in office'), findsNothing);
   });
 }

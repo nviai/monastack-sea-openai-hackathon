@@ -57,7 +57,7 @@ class Node:
         self.db = Path(directory) / f'{name}.sqlite3'
         self.log = Path(directory) / f'{name}.log'
         self.port = free_port()
-        self.env = {**os.environ, 'MONASTACK_DB': str(self.db),
+        self.env = {**os.environ, 'MONASTACK_SEED_COMPANY': '0', 'MONASTACK_WORKSPACE_MODE': 'identity', 'MONASTACK_DB': str(self.db),
                     'MONASTACK_NODE_PORT': str(self.port), 'MONASTACK_REALTIME': 'embedded'}
         self.process = None
 

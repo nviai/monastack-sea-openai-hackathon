@@ -65,7 +65,10 @@ impl MediaConfig {
             return Err("media secret must be at least 32 characters".into());
         }
         Ok(Some(MediaConfig {
-            client_url: url,
+            client_url: super::runtime_paths::advertised_url(
+                &std::env::var("MONASTACK_MEDIA_PUBLIC_URL").unwrap_or(url),
+                "ws",
+            )?,
             api,
             key: key.to_owned(),
             secret: secret.trim().as_bytes().to_vec(),

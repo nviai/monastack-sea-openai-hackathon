@@ -53,6 +53,88 @@ pub fn initialize(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     )
 }
 
+/// Seed the requested demo company and human accounts once on a serving node.
+/// Existing passwords, disabled flags, company identity and member nodes survive.
+pub fn seed_company(db: &mut Connection, seed: &Value) -> Result<bool, Box<dyn std::error::Error>> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if role(&tx)? == Some(Role::Member) || meta(&tx, "demo-company-accounts-v1")?.is_some() {
+        return Ok(false);
+    }
+    if role(&tx)?.is_none() {
+        let key = SigningKey::generate(&mut OsRng);
+        let authority = meta(&tx, "authority-id-v1")?.ok_or("missing authority identity")?;
+        set_meta(&tx, "identity-signing-key", &hex::encode(key.to_bytes()))?;
+        set_meta(
+            &tx,
+            "identity-public-key",
+            &hex::encode(key.verifying_key().to_bytes()),
+        )?;
+        set_meta(&tx, "workspace-id", &authority)?;
+        set_meta(
+            &tx,
+            "workspace-name",
+            seed["workspace"]["name"]
+                .as_str()
+                .ok_or("missing company name")?,
+        )?;
+        set_meta(&tx, "identity-role", "master")?;
+        tx.execute(
+            "DELETE FROM metadata WHERE key IN ('setup-code-hash','setup-failures')",
+            [],
+        )?;
+        audit(&tx, "seed", &authority, "workspace_seeded")?;
+    }
+    for person in seed["actors"].as_array().ok_or("missing actors")? {
+        if person["kind"] != "human" {
+            continue;
+        }
+        let id = person["id"].as_str().ok_or("missing actor id")?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM accounts WHERE actor=?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if exists {
+            continue;
+        }
+        let username = person["username"].as_str().unwrap_or(id);
+        let password_hash = hash_password("NviaiSeaxOpenAIHackathon");
+        tx.execute(
+            "INSERT INTO accounts(actor,username,password_hash,created) VALUES (?1,?2,?3,?4)",
+            params![id, username, password_hash, now()],
+        )?;
+        audit(&tx, "seed", id, "account_seeded")?;
+    }
+    set_meta(&tx, "demo-company-accounts-v1", "applied")?;
+    tx.commit()?;
+    Ok(true)
+}
+
+/// Update the three requested login names without changing actor IDs or credentials.
+/// Member directories learn these usernames from their identity master.
+pub fn migrate_seed_usernames(db: &mut Connection) -> rusqlite::Result<()> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if role(&tx)? != Some(Role::Master) || meta(&tx, "seed-login-names-v2")?.is_some() {
+        return Ok(());
+    }
+    for (id, old, new) in [
+        ("le-pha", "le-pha", "pha.le"),
+        ("hua-hao", "hua-hao", "hao.hua"),
+        ("hua-hao", "hao-hua", "hao.hua"),
+        ("le-triet", "le-triet", "triet.le"),
+    ] {
+        let changed = tx.execute(
+            "UPDATE accounts SET username=?3 WHERE actor=?1 AND username=?2",
+            params![id, old, new],
+        )?;
+        if changed > 0 {
+            audit(&tx, "seed", id, "username_updated")?;
+        }
+    }
+    set_meta(&tx, "seed-login-names-v2", "applied")?;
+    tx.commit()
+}
+
 // ------------------------------------------------------------------ helpers --
 
 fn b64(bytes: impl AsRef<[u8]>) -> String {
@@ -1488,16 +1570,37 @@ async fn master_request(
     authorization: Option<&str>,
     body: Option<&[u8]>,
 ) -> Option<(u16, Vec<u8>)> {
-    let auth = authorization.map(|a| ("Authorization", a));
-    let mut headers = vec![("Content-Type", "application/json")];
-    headers.extend(auth);
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        crate::realtime::http_request(address, method, path, &headers, body),
-    )
-    .await
-    .ok()
-    .flatten()
+    // A full workspace proxy includes long-running agent chat requests.
+    // Never route loopback credentials through a system HTTP proxy or redirects.
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("HTTP client")
+    });
+    let timeout = if path.starts_with("/v1/agents/") && path.ends_with("/chat") {
+        65
+    } else {
+        5
+    };
+    let mut request = client
+        .request(
+            reqwest::Method::from_bytes(method.as_bytes()).ok()?,
+            format!("http://{address}{path}"),
+        )
+        .header("content-type", "application/json")
+        .timeout(std::time::Duration::from_secs(timeout));
+    if let Some(authorization) = authorization {
+        request = request.header("authorization", authorization);
+    }
+    if let Some(body) = body {
+        request = request.body(body.to_vec());
+    }
+    let response = request.send().await.ok()?;
+    let status = response.status().as_u16();
+    Some((status, response.bytes().await.ok()?.to_vec()))
 }
 
 /// `office-node join MASTER_URL` (code on stdin): turns this node into a
@@ -1633,13 +1736,20 @@ pub async fn sync_loop(state: Db) {
     }
 }
 
-/// On a member node, account and admin requests go to the master, which
-/// owns passwords and sessions. Signing out is also recorded locally at
+/// Account/admin requests always go to the master. In shared workspace mode,
+/// all office requests (including realtime tickets and room policy) go there too. Signing out is also recorded locally at
 /// once so the token stops working here before the next sync.
 pub async fn forward_to_master(State(state): State<Db>, request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
-    let forwarded =
-        path.starts_with("/v1/auth/") || path.starts_with("/v1/admin/") || path == "/v1/setup";
+    let shared =
+        std::env::var("MONASTACK_WORKSPACE_MODE").unwrap_or_else(|_| "shared".into()) == "shared";
+    let forwarded = path.starts_with("/v1/auth/")
+        || path.starts_with("/v1/admin/")
+        || path == "/v1/setup"
+        || (shared
+            && path.starts_with("/v1/")
+            && path != "/v1/workspace"
+            && !path.starts_with("/v1/nodes/"));
     if !forwarded {
         return next.run(request).await;
     }

@@ -4,9 +4,10 @@ The node API records ownership and reports; it does not itself run code, connect
 
 ```sh
 umask 077
-openssl rand -hex 32 > local-host-token.txt
-MONASTACK_DB=/path/to/existing.sqlite3 backend/office-node/target/debug/monastack-office-node host-enroll HOST_ID HUMAN_ID AGENT_ID < local-host-token.txt
-MONASTACK_DB=/path/to/existing.sqlite3 backend/office-node/target/debug/monastack-office-node host-claims enable
+mkdir -p runtime/worker
+openssl rand -hex 32 > runtime/worker/host-token.txt
+MONASTACK_DB="$PWD/runtime/db/office.sqlite3" backend/office-node/target/debug/monastack-office-node host-enroll HOST_ID HUMAN_ID AGENT_ID < runtime/worker/host-token.txt
+MONASTACK_DB="$PWD/runtime/db/office.sqlite3" backend/office-node/target/debug/monastack-office-node host-claims enable
 ```
 
 `HOST_ID` is a unique 16–80 character ASCII identifier. The node stores a hash of the token. A host can read `GET /v1/host/jobs` and request `POST /v1/host/claim` with `{"job":"..."}` using its own bearer token. Only approved jobs for its configured agent are available; task-linked jobs require its sponsor's current project editor access. A claim has one owner, an opaque fence and a fixed 30-second wall-clock deadline. A repeated claim by the same host returns the same fence while active; a competing host cannot take it. Expired or interrupted claims are never automatically requeued. A host can query `GET /v1/host/jobs/{id}/control` and post a bounded report to `/v1/host/jobs/{id}/report` with the fence, outcome, summary and stable operation ID. The UI labels reports as unverified and displays them only to people who can access the linked task. Report contents are plaintext on the node.

@@ -59,6 +59,10 @@ def request(base: str, token: str, method: str, path: str, body=None):
 
 
 def once(base: str, token: str, image: str, command: list[str], scratch_root: Path | None = None, codex_state_tmpfs: bool = False) -> str:
+    if scratch_root is None:
+        runtime_root = Path(os.environ.get('MONASTACK_RUNTIME_DIR', Path(__file__).resolve().parents[2] / 'runtime'))
+        scratch_root = runtime_root / 'worker'
+        scratch_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     jobs=request(base,token,'GET','host/jobs')
     if not jobs: return 'no approved job'
     job=jobs[0]['id']
@@ -115,7 +119,7 @@ def main():
     parser.add_argument('--token-file',type=Path,required=True)
     parser.add_argument('--image',required=True,help='already-present sha256 image ID')
     parser.add_argument('--command-file',type=Path,required=True,help='JSON array of fixed command arguments')
-    parser.add_argument('--scratch-root',type=Path,help='existing directory for a fresh disposable child directory')
+    parser.add_argument('--scratch-root',type=Path,help='parent for disposable work; default runtime/worker')
     parser.add_argument('--codex-state-tmpfs',action='store_true',help='provide an ephemeral /.codex directory for compatible images')
     args=parser.parse_args()
     base=validate_node(args.node);token=read_token(args.token_file)

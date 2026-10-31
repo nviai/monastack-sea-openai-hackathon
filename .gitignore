@@ -13,3 +13,10 @@ __pycache__/
 *.pyc
 docs/private/
 .monastack-dev/
+
+.env
+.env.*
+!.env.example
+
+/runtime/*
+!/runtime/README.md

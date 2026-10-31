@@ -14,7 +14,7 @@ import urllib.request
 root = Path(__file__).resolve().parents[2]
 python = root / 'tools/local-model/.venv/bin/python'
 revision = '73e3e38d981303bc594367cd910ea6eb48349da8'
-model = root / 'tools/local-model/cache/hf/hub/models--mlx-community--Qwen3-0.6B-4bit/snapshots' / revision
+model = root / 'runtime/models/hf/hub/models--mlx-community--Qwen3-0.6B-4bit/snapshots' / revision
 if not python.exists() or not model.is_dir():
     raise SystemExit('Install the pinned local model environment first; see docs/local-model-spike.md.')
 with tempfile.TemporaryDirectory(prefix='monastack-inference-test-') as directory:
@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-inference-test-') as director
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    env = {**os.environ, 'MONASTACK_MODEL_PATH':str(model), 'MONASTACK_INFERENCE_TOKEN_FILE':str(token_file), 'MONASTACK_INFERENCE_PORT':str(port), 'HF_HOME':str(root/'tools/local-model/cache/hf')}
+    env = {**os.environ, 'MONASTACK_MODEL_PATH':str(model), 'MONASTACK_INFERENCE_TOKEN_FILE':str(token_file), 'MONASTACK_INFERENCE_PORT':str(port), 'HF_HOME':str(root/'runtime/models/hf')}
     service = subprocess.Popen([str(python), str(root/'backend/local-inference/server.py')], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         for _ in range(300):

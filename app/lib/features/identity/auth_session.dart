@@ -69,7 +69,7 @@ class AuthSession extends ChangeNotifier {
   bool get usingDeviceToken => _deviceToken != null;
   bool get active => signedIn || usingDeviceToken;
 
-  String get _storeKey => 'monastack.session.127.0.0.1:${api.port}';
+  String get _storeKey => 'monastack.session.${api.host}:${api.port}';
 
   /// Signs in again with the stored refresh token, if any. Returns whether a
   /// session is active afterwards.

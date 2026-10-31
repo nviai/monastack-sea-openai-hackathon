@@ -9,10 +9,11 @@ One run loaded the model in 0.316 s and completed generation in 1.528 s. MLX rep
 The model and virtual environment are ignored by Git. Install dependencies into an isolated environment and download the pinned public snapshot; these commands contact package and model hosts, but do not send workspace records. Review dependencies and model license before use:
 
 ```sh
+mkdir -p runtime/models runtime/inference
 uv venv --python 3.12 tools/local-model/.venv
 uv pip install --python tools/local-model/.venv/bin/python -r tools/local-model/requirements.lock
-HF_HOME="$PWD/tools/local-model/cache/hf" HF_HUB_DISABLE_TELEMETRY=1 tools/local-model/.venv/bin/python -c "from huggingface_hub import snapshot_download; print(snapshot_download(repo_id='mlx-community/Qwen3-0.6B-4bit', revision='73e3e38d981303bc594367cd910ea6eb48349da8', allow_patterns=['*.json','*.safetensors','*.model','*.txt','README.md']))"
-HF_HOME="$PWD/tools/local-model/cache/hf" tools/local-model/.venv/bin/python tools/local-model/benchmark.py
+HF_HOME="$PWD/runtime/models/hf" HF_HUB_DISABLE_TELEMETRY=1 tools/local-model/.venv/bin/python -c "from huggingface_hub import snapshot_download; print(snapshot_download(repo_id='mlx-community/Qwen3-0.6B-4bit', revision='73e3e38d981303bc594367cd910ea6eb48349da8', allow_patterns=['*.json','*.safetensors','*.model','*.txt','README.md']))"
+HF_HOME="$PWD/runtime/models/hf" tools/local-model/.venv/bin/python tools/local-model/benchmark.py
 ```
 
 The benchmark loads the pinned local path, disables Hugging Face network lookup and telemetry through environment flags, disables remote model code, and uses a fixed synthetic input. These flags are not an OS-level network sandbox. The script reports its own metrics and output. The benchmark itself does not read documents, call the node, expose an endpoint or run as Mona. The optional service below accepts only a user-supplied prompt and has no automatic document access. Further work is needed on permissions, data handling, isolation, cancellation, quality evaluations and resource limits.
@@ -26,7 +27,7 @@ From the repository root, after downloading the model as above:
 ```sh
 umask 077
 openssl rand -hex 32 > local-inference-token.txt
-MONASTACK_MODEL_PATH="$PWD/tools/local-model/cache/hf/hub/models--mlx-community--Qwen3-0.6B-4bit/snapshots/73e3e38d981303bc594367cd910ea6eb48349da8" MONASTACK_INFERENCE_TOKEN_FILE="$PWD/local-inference-token.txt" HF_HOME="$PWD/tools/local-model/cache/hf" tools/local-model/.venv/bin/python backend/local-inference/server.py
+MONASTACK_MODEL_PATH="$PWD/runtime/models/hf/hub/models--mlx-community--Qwen3-0.6B-4bit/snapshots/73e3e38d981303bc594367cd910ea6eb48349da8" MONASTACK_INFERENCE_TOKEN_FILE="$PWD/runtime/inference/token.txt" HF_HOME="$PWD/runtime/models/hf" tools/local-model/.venv/bin/python backend/local-inference/server.py
 ```
 
 Connect the office app to its local node, choose **Workspace tools → Local text model**, paste the separate inference token, and explicitly submit a prompt. The token file is private and ignored by Git. `python3 backend/local-inference/test_server.py --app` starts an isolated service with a temporary token and port, tests authorization and synthetic generation, and runs the macOS screen integration test. It does not send workspace data. The app test runner reported that it could not foreground the app, but the test completed.

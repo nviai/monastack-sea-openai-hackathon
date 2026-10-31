@@ -5,12 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:monastack/features/office/presence/realtime_session.dart';
 
 void main() {
-  test('only loopback HTTP realtime endpoints are accepted', () {
+  test('loopback and private LAN realtime endpoints are accepted', () {
     expect(RealtimeSession.parseBase('http://127.0.0.1:47831'), isNotNull);
+    expect(
+      RealtimeSession.parseBase('http://192.168.224.217:47831'),
+      isNotNull,
+    );
+    expect(RealtimeSession.parseBase('http://10.0.0.2:47831'), isNotNull);
     for (final value in [
       'https://127.0.0.1:47831',
       'http://localhost:47831',
-      'http://10.0.0.2:47831',
+      'http://8.8.8.8:47831',
+      'http://192.168.224.217:47831?x=1',
+      'http://user:pass@192.168.224.217:47831',
+      'http://192.168.224.217:0',
+      'http://192.168.224.217:47831#fragment',
       'http://127.0.0.1',
       'http://127.0.0.1:47831/v1',
       42,
@@ -49,7 +58,7 @@ void main() {
     expect(issued, 2);
   });
 
-  test('a non-loopback ticket response is refused before any request', () {
+  test('an invalid ticket endpoint is refused before any request', () {
     final session = RealtimeSession(
       client: HttpClient(),
       issue: () async => {

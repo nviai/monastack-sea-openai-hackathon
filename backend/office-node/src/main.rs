@@ -1,3 +1,4 @@
+mod agent_chat;
 mod auth;
 mod bookings;
 mod contracts;
@@ -14,7 +15,9 @@ mod meetings;
 mod payments;
 mod realtime;
 mod room_admin;
+mod runtime_paths;
 mod sales;
+mod seed_updates;
 mod support;
 mod tasks;
 mod whiteboard;
@@ -132,6 +135,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     if seeded {
         jobs::seed_roles(&tx, actors)?;
         customers::seed_roles(&tx, actors)?;
+        seed_updates::apply(&tx)?;
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         return Ok(());
@@ -161,6 +165,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     }
     jobs::seed_roles(&tx, actors)?;
     customers::seed_roles(&tx, actors)?;
+    seed_updates::apply(&tx)?;
     tx.execute("INSERT INTO metadata VALUES ('seed-v1','applied')", [])?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
@@ -502,6 +507,21 @@ fn loopback_port(name: &str, default: u16) -> Result<u16, Box<dyn std::error::Er
         .parse()?)
 }
 
+/// Listener address; callers on this machine still connect through loopback.
+fn bind_host() -> Result<std::net::IpAddr, Box<dyn std::error::Error>> {
+    Ok(env::var("MONASTACK_BIND_HOST")
+        .unwrap_or_else(|_| "127.0.0.1".into())
+        .parse()?)
+}
+
+fn realtime_public_url(port: u16) -> Result<String, Box<dyn std::error::Error>> {
+    runtime_paths::advertised_url(
+        &env::var("MONASTACK_REALTIME_PUBLIC_URL")
+            .unwrap_or_else(|_| format!("http://127.0.0.1:{port}")),
+        "http",
+    )
+}
+
 /// Standalone realtime service: no database, epoch polled from the authority.
 async fn serve_realtime() -> Result<(), Box<dyn std::error::Error>> {
     let key = realtime::TicketKey::from_env()?
@@ -516,8 +536,8 @@ async fn serve_realtime() -> Result<(), Box<dyn std::error::Error>> {
     }
     let epoch = realtime::PolledEpoch::new();
     tokio::spawn(realtime::poll_epoch(authority, epoch.clone()));
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
-    eprintln!("realtime service listening on loopback:{port}");
+    let listener = tokio::net::TcpListener::bind((bind_host()?, port)).await?;
+    eprintln!("realtime service listening on {}:{port}", bind_host()?);
     axum::serve(
         listener,
         realtime::router(realtime::Realtime::new(key, epoch)),
@@ -572,8 +592,9 @@ fn copy_database(
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    runtime_paths::load_env()?;
     let args: Vec<String> = env::args().collect();
-    let path = env::var("MONASTACK_DB").unwrap_or_else(|_| "office.sqlite3".into());
+    let path = runtime_paths::database()?;
     match args.get(1).map(String::as_str) {
         None if args.len()==1 => {},
         Some("realtime") if args.len()==2 => return serve_realtime().await,
@@ -618,11 +639,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let source = args
             .get(2)
             .ok_or("usage: office-node restore SNAPSHOT (MONASTACK_DB must not exist)")?;
+        runtime_paths::create_parent(&path)?;
         copy_database(std::path::Path::new(source), std::path::Path::new(&path))?;
         eprintln!("Restore created and checked");
         return Ok(());
     }
-    let mut db = Connection::open(path)?;
+    runtime_paths::create_parent(&path)?;
+    let mut db = Connection::open(&path)?;
     db.busy_timeout(std::time::Duration::from_secs(2))?;
     db.execute_batch("PRAGMA foreign_keys=ON;")?;
     initialize(
@@ -630,6 +653,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_str!("../../../data/seed/nviai/seed.v1.json"),
     )?;
     db.execute_batch("PRAGMA journal_mode=WAL;")?;
+    if args.len() == 1 && env::var("MONASTACK_SEED_COMPANY").as_deref() != Ok("0") {
+        let seed = serde_json::from_str(include_str!("../../../data/seed/nviai/seed.v1.json"))?;
+        if auth::seed_company(&mut db, &seed)? {
+            eprintln!(
+                "Seeded NVIAI company and missing member accounts. See docs/seeded-accounts.md for usernames."
+            );
+        }
+    }
+
+    if args.len() == 1 {
+        auth::migrate_seed_usernames(&mut db)?;
+    }
+
     match args.get(1).map(String::as_str) {
         Some("setup-code") => {
             let code = auth::new_setup_code(&db)?.ok_or("the workspace is already set up")?;
@@ -862,6 +898,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let state = Arc::new(Mutex::new(db));
     let app = Router::new()
+        .route("/v1/agents/capabilities", get(agent_chat::capabilities))
+        .route(
+            "/v1/agents/{agent}/chat",
+            axum::routing::post(agent_chat::chat),
+        )
         .route("/v1/host/jobs", get(hosts::jobs))
         .route("/v1/host/claim", axum::routing::post(hosts::claim))
         .route("/v1/host/jobs/{job}/control", get(hosts::control))
@@ -1104,20 +1145,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // port (MONASTACK_REALTIME_PORT, ephemeral when unset), with a fresh key
     // and the epoch read from this database. `external` advertises a
     // separately started `office-node realtime` service instead.
-    let config = match env::var("MONASTACK_REALTIME").as_deref() {
+    // A shared member must never start its own presence/media authority.
+    let shared_member = env::var("MONASTACK_WORKSPACE_MODE").unwrap_or_else(|_| "shared".into())
+        == "shared"
+        && auth::role(&state.lock().unwrap())? == Some(auth::Role::Member);
+    let realtime_mode = if shared_member {
+        Ok("off".to_string())
+    } else {
+        env::var("MONASTACK_REALTIME")
+    };
+    let config = match realtime_mode.as_deref() {
         Ok("off") => None,
         Ok("external") => Some(RealtimeConfig {
             key: realtime::TicketKey::from_env()?
                 .ok_or("MONASTACK_REALTIME_KEY_FILE is required for external realtime")?,
-            url: format!(
-                "http://127.0.0.1:{}",
-                loopback_port("MONASTACK_REALTIME_PORT", 47831)?
-            ),
+            url: realtime_public_url(loopback_port("MONASTACK_REALTIME_PORT", 47831)?)?,
         }),
         Ok("embedded") | Err(_) => {
             let key = realtime::TicketKey::from_env()?.unwrap_or_else(realtime::TicketKey::random);
             let listener = tokio::net::TcpListener::bind((
-                std::net::Ipv4Addr::LOCALHOST,
+                bind_host()?,
                 loopback_port("MONASTACK_REALTIME_PORT", 0)?,
             ))
             .await?;
@@ -1132,17 +1179,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("realtime service stopped: {error}");
                 }
             });
-            eprintln!("realtime presence listening on loopback:{realtime_port}");
+            eprintln!(
+                "realtime presence listening on {}:{realtime_port}",
+                bind_host()?
+            );
             Some(RealtimeConfig {
                 key,
-                url: format!("http://127.0.0.1:{realtime_port}"),
+                url: realtime_public_url(realtime_port)?,
             })
         }
         Ok(_) => return Err("MONASTACK_REALTIME must be embedded, external or off".into()),
     };
     let app = app.layer(axum::Extension(config));
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
-    eprintln!("office node listening on loopback:{port}");
+    let listener = tokio::net::TcpListener::bind((bind_host()?, port)).await?;
+    eprintln!("office node listening on {}:{port}", bind_host()?);
     axum::serve(listener, app).await?;
     Ok(())
 }

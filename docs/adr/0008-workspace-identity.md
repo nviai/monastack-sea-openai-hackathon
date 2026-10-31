@@ -1,6 +1,6 @@
 # ADR 0008: Workspace identity, sign-in and identity federation
 
-Status: accepted for the local topology. Not reviewed for production; see limits.
+Status: identity design accepted; default member office routing is extended by [ADR 0009](0009-shared-office.md). Not reviewed for production; see limits.
 
 ## Context
 
@@ -8,7 +8,7 @@ Until now a person joined by pasting a bearer token that a local operator create
 
 ## Decision
 
-**Master and members.** The node on which the company is set up becomes the workspace's identity **master**. It alone stores password hashes, sessions with their refresh tokens, invitations and the Ed25519 signing key (in its SQLite metadata, protected like the rest of the database). Other nodes join as **members** with a one-hour, single-use join code created by an organization admin (`office-node join http://127.0.0.1:PORT`, code on stdin). A member pulls a directory from the master every 5 s: the public key, the workspace name, people, account usernames and disabled flags, and the sessions revoked recently enough that their access tokens may still be valid. It never receives password hashes or refresh tokens. Sign-in, refresh, sign-out, invitations, passwords, device lists and admin requests sent to a member are forwarded to the master. Only identity is federated: chat, tasks and other records stay on the node that stores them.
+**Master and members.** The node on which the company is set up becomes the workspace's identity **master**. It alone stores password hashes, sessions with their refresh tokens, invitations and the Ed25519 signing key (in its SQLite metadata, protected like the rest of the database). Other nodes join as **members** with a one-hour, single-use join code created by an organization admin (`office-node join http://127.0.0.1:PORT`, code on stdin). A member pulls a directory from the master every 5 s: the public key, the workspace name, people, account usernames and disabled flags, and the sessions revoked recently enough that their access tokens may still be valid. It never receives password hashes or refresh tokens. Sign-in, refresh, sign-out, invitations, passwords, device lists and admin requests sent to a member are forwarded to the master. In the legacy `MONASTACK_WORKSPACE_MODE=identity` mode only identity is federated. The current default `shared` mode forwards office records and realtime ticket requests to the master; see ADR 0009.
 
 **Company setup.** An unconfigured node prints a setup code (`XXXX-XXXX-XXXX-XXXX`, 80 bits) on start; `office-node setup-code` prints a fresh one. In the app, "Set up company" takes the code, the company name, who you are (a seeded person or someone new), a username and a password. Five wrong codes block setup until a new code is generated. Setup happens once; the person becomes an organization admin.
 
