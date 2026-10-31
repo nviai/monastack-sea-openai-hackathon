@@ -4,15 +4,21 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import sqlite3
 import subprocess
 import time
 import urllib.error
 import urllib.request
+import sys
+from matrix_stack import Stack, zellij_tab
+from visible_service import launch_service
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME = ROOT/'runtime'
+RUNTIME = Path(os.environ.get('MONASTACK_RUNTIME_DIR', ROOT/'runtime')).resolve()
+SESSION = 'monastack-matrix-server'
+MATRIX = Stack(RUNTIME, session=SESSION)
 NODE = ROOT/'backend/office-node/target/debug/monastack-office-node'
 APP = ROOT/'app/build/macos/Build/Products/Debug/monastack.app/Contents/MacOS/monastack'
 SPECS = {
@@ -35,11 +41,30 @@ def media_environment(name):
         'MONASTACK_MEDIA_TCP_PORT':str(tcp_port),
         'MONASTACK_MEDIA_UDP_PORT':str(udp_port)}
 
+def media_owned(name):
+    if not shutil.which('docker'): return False
+    result=subprocess.run(['docker','inspect',f'monastack-livekit-{name}'],capture_output=True,text=True)
+    if result.returncode: return False
+    expected=str((RUNTIME/'media'/name/'livekit.yaml').resolve())
+    mounts=json.loads(result.stdout)[0]['Mounts']
+    if not any(m['Source']==expected and m['Destination']=='/livekit.yaml' for m in mounts):
+        raise RuntimeError(f'LiveKit {name} belongs to another runtime; left untouched')
+    return True
+
 def start_media():
+    if not shutil.which('docker') or subprocess.run(['docker','info'],capture_output=True).returncode:
+        print('LiveKit: unavailable (Docker not installed); office nodes will still start')
+        return
     for name in MEDIA:
+        owned=media_owned(name)
         result = subprocess.run(['docker','inspect','--format','{{.State.Running}}',f'monastack-livekit-{name}'], capture_output=True,text=True)
         if result.returncode == 0 and result.stdout.strip() == 'true':
             continue
+        for port,kind in [(MEDIA[name][0],socket.SOCK_STREAM),(MEDIA[name][1],socket.SOCK_STREAM),(MEDIA[name][2],socket.SOCK_DGRAM)]:
+            with socket.socket(socket.AF_INET,kind) as sock:
+                sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                try: sock.bind(('0.0.0.0',port))
+                except OSError: raise RuntimeError(f'Port {port} is occupied; service left untouched')
         subprocess.run(['sh',str(ROOT/'backend/media/livekit-dev.sh'),'start'],
             env=media_environment(name),cwd=ROOT,check=True,capture_output=True)
         # Wait for the signaling/API listener before starting the control plane.
@@ -60,7 +85,7 @@ def call(port, path, body=None, token=None, method=None):
         text = response.read()
         return json.loads(text) if text else None
 
-def environment(name):
+def environment(name, with_matrix=True):
     port, realtime, db, seed = SPECS[name]
     values = {**os.environ, 'MONASTACK_RUNTIME_DIR':str(RUNTIME),
         'MONASTACK_ENV_FILE':str(RUNTIME/'.env'), 'MONASTACK_DB':str(db),
@@ -69,7 +94,13 @@ def environment(name):
         'MONASTACK_WORKSPACE_MODE':'identity' if name == 'server' else 'shared',
         'MONASTACK_BIND_HOST':'0.0.0.0',
         **({'LIVE_AGENTS_ENABLED':'0'} if name != 'server' else {})}
-    if name == 'server':
+    values.pop('MONASTACK_MATRIX_DIR', None)
+    values.pop('MONASTACK_MATRIX_PUBLIC_URL', None)
+    values['MONASTACK_MATRIX_DISABLED'] = '0' if with_matrix else '1'
+    if name == 'server' and with_matrix:
+        values.update({'MONASTACK_MATRIX_DIR':str(RUNTIME/'matrix'),
+            'MONASTACK_MATRIX_PUBLIC_URL':os.environ.get('MONASTACK_MATRIX_PUBLIC_URL',f'http://{SERVER_HOST}:8008')})
+    if name == 'server' and shutil.which('docker'):
         values.update({'MONASTACK_MEDIA_URL':'ws://127.0.0.1:7880',
             'MONASTACK_MEDIA_PUBLIC_URL':f'ws://{SERVER_HOST}:7880',
             'MONASTACK_REALTIME_PUBLIC_URL':f'http://{SERVER_HOST}:47831',
@@ -85,30 +116,25 @@ def running(name):
         return None
     pid = int(file.read_text().strip())
     command = subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True).stdout
-    expected = str(ROOT/'backend/live-agent/worker.py') if name == 'voice-worker' else str(APP if name in ('app', 'lan-client') else NODE)
+    expected = str(ROOT/'backend/live-agent/worker.py' if name == 'voice-worker' else ROOT/'tools/matrix_proxy.py' if name == 'matrix-gateway' else APP if name in ('app', 'lan-client') else NODE)
     return pid if expected in command else None
 
 def spawn(name, command, env):
     if running(name):
         return
-    log = RUNTIME/'logs'/f'{name}.log'
-    with log.open('ab') as output:
-        process = subprocess.Popen(command, cwd=ROOT, env=env,
-            stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
-    pid_file(name).write_text(str(process.pid)+'\n')
+    launch_service(SESSION, {'server':'BE-api','client':'BE-member','app':'FE-macos','voice-worker':'GPT-Live-worker'}[name],
+        command, env, pid_file(name))
     if name in SPECS:
         port = SPECS[name][0]
         for _ in range(400):
-            if process.poll() is not None:
-                raise RuntimeError(f'{name} exited; inspect runtime/logs/{name}.log')
             try:
                 call(port,'workspace')
                 return
             except (OSError, urllib.error.HTTPError):
                 time.sleep(.05)
-        raise RuntimeError(f'{name} startup timeout')
+        raise RuntimeError(f'{name} startup timeout; inspect Zellij {SESSION}')
 
-def start(with_app):
+def start(with_app, with_matrix=True):
     for directory in ['db','logs','pids']:
         (RUNTIME/directory).mkdir(parents=True,exist_ok=True,mode=0o700)
     if not NODE.is_file():
@@ -125,8 +151,17 @@ def start(with_app):
                     sock.bind(('0.0.0.0', value))
                 except OSError:
                     raise RuntimeError(f'Port {value} is already occupied; existing service was left untouched.')
+    if with_matrix:
+        if not running('matrix-gateway'):
+            from matrix_stack import check_port
+            check_port(8008)
+        MATRIX.start()
+        if not running('matrix-gateway'):
+            MATRIX.gateway()
     start_media()
-    spawn('server',[str(NODE)],environment('server'))
+    for media in MEDIA if shutil.which('docker') else ():
+        zellij_tab(SESSION,'LiveKit-'+media,['docker','logs','--follow',f'monastack-livekit-{media}'])
+    spawn('server',[str(NODE)],environment('server', with_matrix))
     client_db = SPECS['client'][2]
     if not client_db.exists():
         subprocess.run([str(NODE),'setup-code'],env=environment('client'),cwd=ROOT,
@@ -155,7 +190,9 @@ def start(with_app):
         if not worker_python.exists():
             raise RuntimeError('Run sh backend/live-agent/setup.sh first.')
         spawn('voice-worker', [str(worker_python), str(ROOT/'backend/live-agent/worker.py')], environment('server'))
-        time.sleep(.3)
+        for _ in range(50):
+            if running('voice-worker'): break
+            time.sleep(.1)
         if not running('voice-worker'):
             raise RuntimeError('Voice worker exited; inspect runtime/logs/voice-worker.log')
     if with_app:
@@ -165,21 +202,27 @@ def start(with_app):
     status()
 
 def status():
+    MATRIX.status()
+    print(f"Matrix clients: http://{SERVER_HOST}:8008; admin: loopback 8009; zellij attach {SESSION}")
     for name, (port, realtime, db, _) in SPECS.items():
         if not running(name):
             print(f'{name}: stopped')
             continue
         state = call(port,'workspace')
-        print(f'{name}: PID {running(name)}, {state["role"]}, API 0.0.0.0:{port}, realtime {('0.0.0.0:'+str(realtime)) if name == 'server' else 'shared server :47831'}, DB {db.relative_to(ROOT)}')
+        print(f'{name}: PID {running(name)}, {state["role"]}, API 0.0.0.0:{port}, realtime {('0.0.0.0:'+str(realtime)) if name == 'server' else 'shared server :47831'}, DB {db}')
     for name, ports in MEDIA.items():
-        check = subprocess.run(['docker','inspect','--format','{{.State.Running}}',f'monastack-livekit-{name}'],capture_output=True,text=True)
-        print(f'LiveKit {name}: {"running" if check.returncode == 0 and check.stdout.strip() == "true" else "stopped"}; signaling 0.0.0.0:{ports[0]}, RTC TCP {ports[1]}, UDP {ports[2]}')
+        if shutil.which('docker'):
+            check = subprocess.run(['docker','inspect','--format','{{.State.Running}}',f'monastack-livekit-{name}'],capture_output=True,text=True)
+            state = 'running' if check.returncode == 0 and check.stdout.strip() == 'true' else 'stopped'
+        else:
+            state = 'unavailable (Docker not installed)'
+        print(f'LiveKit {name}: {state}; signaling :{ports[0]}, RTC TCP :{ports[1]}, UDP :{ports[2]}')
     print(f'Live agent worker: {running("voice-worker") or "stopped"}')
     if running('lan-client'): print(f'LAN client: running, PID {running("lan-client")}')
     print(f'app: {"running, PID "+str(running("app")) if running("app") else "stopped"}; connects to 127.0.0.1:47840')
 
 def stop():
-    for name in ['lan-client','app','voice-worker','client','server']:
+    for name in ['matrix-gateway','lan-client','app','voice-worker','client','server']:
         pid = running(name)
         if pid:
             os.kill(pid,signal.SIGTERM)
@@ -188,19 +231,24 @@ def stop():
                 if not running(name): break
                 time.sleep(.1)
         pid_file(name).unlink(missing_ok=True)
+    MATRIX.stop()
     for name in MEDIA:
+        if not media_owned(name): continue
         subprocess.run(['sh',str(ROOT/'backend/media/livekit-dev.sh'),'stop'],env=media_environment(name),check=True,capture_output=True)
 
 if __name__ == '__main__':
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=['start','status','stop'])
-    parser.add_argument('--no-app',action='store_true',help='start only the two nodes')
+    parser.add_argument('--no-matrix',action='store_true',help='start office nodes without Matrix; Docker is optional')
+    parser.add_argument('--no-app',action='store_true',help='start backend services without the macOS app')
     args = parser.parse_args()
     try:
-        if args.action == 'start': start(not args.no_app)
+        if args.action == 'start': start(not args.no_app, not args.no_matrix)
         elif args.action == 'stop': stop()
         else: status()
+    except RuntimeError as error:
+        raise SystemExit(str(error))
     except Exception as error:
         # Do not expose credentials, HTTP bodies or subprocess command input.
-        raise SystemExit(f'Local office failed ({type(error).__name__}). Check runtime/logs or occupied ports.')
+        raise SystemExit(f'Local office failed ({type(error).__name__}). Inspect Zellij monastack-matrix-server and occupied ports.')

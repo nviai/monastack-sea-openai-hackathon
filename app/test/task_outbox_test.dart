@@ -5,65 +5,45 @@ import 'package:monastack/features/sync/task_outbox.dart';
 import 'package:monastack/shared/node_request.dart';
 
 void main() {
-  test('queued chat survives restart, deduplicates delivery and rejects revoked scope', () async {
-    final dir = await Directory.systemTemp.createTemp(
-      'monastack-chat-outbox-test-',
-    );
-    addTearDown(() => dir.delete(recursive: true));
-    final path = '${dir.path}/chat.sqlite3';
-    final sent = <String, String>{};
-    var loseResponses = 2;
-    var allowed = true;
-    Future<dynamic> network(String method, String path, [Object? body]) async {
-      if (!allowed) throw const NodeFailure(403);
-      final data = body as Map<String, dynamic>;
-      sent[data['id'] as String] = data['body'] as String;
-      if (loseResponses > 0) {
-        loseResponses--;
-        throw const SocketException('lost response');
-      }
-    }
-
-    final box = TaskOutbox.forPath('authority_a_an', path);
-    final first = TaskDelivery(
-      outbox: box,
-      network: network,
-      active: () => true,
-      onChanged: (_) {},
-    );
-    const id = '0123456789abcdef';
-    await expectLater(
-      first.request('POST', '/v1/messages/room%3Alobby', {
-        'id': id,
-        'op': id,
-        'body': 'Synthetic message',
-      }),
-      throwsA(isA<TaskChangeQueued>()),
-    );
-    expect((await box.list()).single['state'], 'pending');
-    expect(await TaskOutbox.forPath('authority_b_an', path).list(), isEmpty);
-    final resumed = TaskDelivery(
-      outbox: TaskOutbox.forPath('authority_a_an', path),
-      network: network,
-      active: () => true,
-      onChanged: (_) {},
-    );
-    await resumed.drain();
-    expect(await resumed.outbox.list(), isEmpty);
-    expect(sent.length, 1);
-    allowed = false;
-    const privateId = 'abcdef0123456789';
-    await expectLater(
-      resumed.request('POST', '/v1/messages/room%3Afinance', {
-        'id': privateId,
-        'op': privateId,
-        'body': 'Synthetic private message',
-      }),
-      throwsA(isA<TaskChangeRejected>()),
-    );
-    expect((await resumed.outbox.list()).single['state'], 'rejected');
-    expect(sent.length, 1);
-  });
+  test(
+    'legacy queued chat survives restart and can never be replayed',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'monastack-legacy-outbox-',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final path = '${dir.path}/chat.sqlite3';
+      final box = TaskOutbox.forPath('authority_a_an', path);
+      const route = '/v1/messages/room%3Alobby';
+      const payload = {
+        'id': '0123456789abcdef',
+        'op': '0123456789abcdef',
+        'body': 'Unsent text',
+      };
+      await box.enqueue(route, payload);
+      final restored = TaskOutbox.forPath('authority_a_an', path);
+      expect((await restored.list()).single['body'], payload);
+      expect(await TaskOutbox.forPath('authority_b_an', path).list(), isEmpty);
+      var writes = 0;
+      final delivery = TaskDelivery(
+        outbox: restored,
+        network: (method, path, [body]) async {
+          writes++;
+        },
+        active: () => true,
+        onChanged: (_) {},
+      );
+      await delivery.drain();
+      expect(writes, 0);
+      expect((await restored.list()).single['state'], 'rejected');
+      expect(TaskOutbox.supports('POST', route), isFalse);
+      await expectLater(
+        delivery.request('POST', route, payload),
+        throwsA(isA<OutboxFailure>()),
+      );
+      expect(writes, 0);
+    },
+  );
   test(
     'durable task changes survive restart and are delivered idempotently',
     () async {

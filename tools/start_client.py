@@ -32,7 +32,9 @@ def running(executable):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host',type=address,default='192.168.224.217')
+    server_config = RUNTIME/'server-address.json'
+    saved_host = json.loads(server_config.read_text()).get('host') if server_config.exists() else None
+    parser.add_argument('--host',type=address,default=os.environ.get('MONASTACK_SERVER_HOST') or saved_host or '192.168.224.217')
     parser.add_argument('--port',type=int,default=47830)
     parser.add_argument('--skip-build',action='store_true',help='use the existing app build')
     group = parser.add_mutually_exclusive_group()

@@ -1,6 +1,7 @@
 # Hướng dẫn chạy Monastack từ đầu
 
 GPT-Live voice agent theo phòng: cài worker bằng `sh backend/live-agent/setup.sh`, bật `LIVE_AGENTS_ENABLED=1` trong `runtime/.env`; lệnh local office sẽ chạy worker cùng server. Xem [hướng dẫn vận hành](live-agent-voice.md).
+Matrix chat cần Synapse + Postgres trên **server**. Dùng `python3 tools/local_office.py start --no-app` để khởi động toàn bộ backend trong Zellij. Xem [Matrix chat operations](matrix-chat-operations.md). Member và app không chạy homeserver riêng. **Server phải khởi động với IP LAN của nó** (`MONASTACK_SERVER_HOST=<IP-LAN-server>` hoặc `MONASTACK_MATRIX_PUBLIC_URL`); với 127.0.0.1 các máy khác báo "Chat could not connect".
 
 Client trên máy khác trong LAN: chạy `./tools/start-client.sh` để kết nối server `192.168.224.217`; xem [hướng dẫn client LAN](start-client-lan.vi.md).
 
@@ -39,7 +40,7 @@ Cần source repository trên máy và các công cụ:
 - Flutter stable có Dart đáp ứng `app/pubspec.yaml`: Dart `^3.13.5`. Phiên bản đã dùng kiểm tra gần nhất: Flutter `3.47.9`, Dart `3.13.7`.
 - Rust stable và Cargo, có trong `PATH` và tại vị trí mặc định `$HOME/.cargo/bin/cargo` mà script đóng gói app sử dụng.
 - Python 3 nếu dùng lệnh nhập join code bên dưới.
-- Docker Desktop chỉ cần khi bật voice/camera; không cần cho chat văn bản hoặc OpenAI.
+- Docker Desktop cần trên server cho LiveKit và chat văn bản Matrix. Client không cần Docker để chat.
 
 Kiểm tra sau khi cài:
 

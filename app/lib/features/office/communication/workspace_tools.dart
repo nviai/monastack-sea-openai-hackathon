@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/nexus_tokens.dart';
+
 typedef _Tool = ({String id, String label, IconData icon});
 
 const _groups = <(String, List<_Tool>)>[
   (
     'Work',
     [
+      (id: 'chat', label: 'Chat', icon: Icons.forum_outlined),
       (id: 'tasks', label: 'Open task board', icon: Icons.view_kanban_outlined),
       (id: 'agent-chat', label: 'Chat with agents', icon: Icons.chat_outlined),
       (id: 'agent-configuration', label: 'Agent configuration', icon: Icons.tune),
@@ -92,73 +95,93 @@ const _adminTools = <_Tool>[
 /// Grouped launcher for workspace views. Returns the chosen tool ID.
 /// Every view authorizes its own requests against the node.
 class WorkspaceTools extends StatelessWidget {
-  const WorkspaceTools({super.key, this.account = false, this.admin = false});
+  const WorkspaceTools({
+    super.key,
+    this.account = false,
+    this.admin = false,
+    this.chatUnread = 0,
+  });
 
   /// Signed in with an account (not a device token), and as an admin.
   final bool account;
   final bool admin;
+  final int chatUnread;
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Workspace tools'),
-    content: SizedBox(
-      width: 560,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final (group, tools) in [
-              if (account)
-                ('Account', [..._accountTools, if (admin) ..._adminTools]),
-              ..._groups,
-            ]) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 6),
-                child: Text(
-                  group.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xff71847a),
+  Widget build(BuildContext context) {
+    final chatTokens = NexusTokens.of(MediaQuery.platformBrightnessOf(context));
+    return AlertDialog(
+      title: const Text('Workspace tools'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (group, tools) in [
+                if (account)
+                  ('Account', [..._accountTools, if (admin) ..._adminTools]),
+                ..._groups,
+              ]) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 6),
+                  child: Text(
+                    group.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xff71847a),
+                    ),
                   ),
                 ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final tool in tools)
-                    SizedBox(
-                      width: 176,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 14,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final tool in tools)
+                      SizedBox(
+                        width: 176,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context, tool.id),
+                          icon: Badge(
+                            isLabelVisible: tool.id == 'chat' && chatUnread > 0,
+                            label: Text('$chatUnread'),
+                            backgroundColor: chatTokens.accent,
+                            textColor: chatTokens.onAccent,
+                            textStyle: chatTokens.text(
+                              NexusTokens.t11,
+                              weight: NexusTokens.w600,
+                              height: 1,
+                            ),
+                            child: Icon(tool.icon, size: 18),
+                          ),
+                          label: Text(
+                            tool.label,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        onPressed: () => Navigator.pop(context, tool.id),
-                        icon: Icon(tool.icon, size: 18),
-                        label: Text(
-                          tool.label,
-                          overflow: TextOverflow.ellipsis,
-                        ),
                       ),
-                    ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-    ],
-  );
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
 }

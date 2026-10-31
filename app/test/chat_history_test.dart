@@ -1,118 +1,81 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/features/office/communication/chat_history.dart';
+import 'package:monastack/features/chat/presentation/legacy_history.dart';
+import 'package:monastack/features/chat/presentation/legacy_outbox.dart';
+
+import 'chat/fake_chat_client.dart';
 
 void main() {
   testWidgets(
-    'empty older page stays disabled after refreshing the same page',
+    'legacy history uses read-only endpoint with created cursor and clears on revocation',
     (tester) async {
-      Future<dynamic> request(
-        String method,
-        String path, [
-        Object? body,
-      ]) async {
-        if (path.contains('?before=')) return <dynamic>[];
-        return List.generate(
-          200,
-          (index) => {
-            'id': 'synthetic-message-${index.toString().padLeft(4, '0')}',
-            'sender': 'synthetic',
-            'body': 'message $index',
+      final client = FakeChatClient()
+        ..history = List.generate(
+          50,
+          (i) => {
+            'id': 'old-$i',
+            'sender_name': 'An',
+            'sender_actor': 'an',
+            'body': 'Earlier $i',
+            'created': 'time-$i',
           },
         );
-      }
-
       await tester.pumpWidget(
         MaterialApp(
-          home: ChatHistory(request: request, scope: 'room:lobby'),
+          home: LegacyHistory(client: client, scope: 'room:lobby'),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Older'));
+      expect(client.calls, contains('legacy:room:lobby:null'));
+      expect(find.text('Earlier messages (before Matrix)'), findsOneWidget);
+      client.history = [];
+      await tester.tap(find.text('Load older messages'));
+      await tester.pumpAndSettle();
+      expect(client.calls.last, 'legacy:room:lobby:time-49');
+      expect(find.text('Load older messages'), findsNothing);
+      client.revoke('lobby');
       await tester.pumpAndSettle();
       expect(
-        tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Older'))
-            .onPressed,
-        isNull,
+        find.text('History unavailable or access denied.'),
+        findsOneWidget,
       );
-      expect(find.text('synthetic: message 0'), findsOneWidget);
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pump();
-      expect(
-        tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Older'))
-            .onPressed,
-        isNull,
-      );
+      expect(find.text('Earlier 0'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      client.dispose();
     },
   );
-  testWidgets('history pages older and newer, then clears on access loss', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    var allowed = true;
-    final paths = <String>[];
-    Future<dynamic> request(String method, String path, [Object? body]) async {
-      paths.add(path);
-      if (!allowed) throw StateError('revoked');
-      if (path.contains('?before=')) {
-        return [
-          {
-            'id': 'synthetic-old-00001',
-            'sender': 'synthetic',
-            'body': 'oldest synthetic',
-          },
-        ];
-      }
-      return List.generate(
-        200,
-        (index) => {
-          'id': index == 0
-              ? 'synthetic+cursor-0000'
-              : 'synthetic-message-${index.toString().padLeft(4, '0')}',
-          'sender': 'synthetic',
-          'body': 'latest synthetic $index',
-        },
+  testWidgets(
+    'legacy error is retryable and queue recovery has copy but no resend',
+    (tester) async {
+      final client = FakeChatClient()..failLoad = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LegacyHistory(client: client, scope: 'dm:an'),
+        ),
       );
-    }
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ChatHistory(request: request, scope: 'dm:person'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(paths.first, '/v1/messages/dm%3Aperson');
-    await tester.tap(find.text('Older'));
-    await tester.pumpAndSettle();
-    expect(
-      paths.last,
-      '/v1/messages/dm%3Aperson?before=synthetic%2Bcursor-0000',
-    );
-    expect(find.text('synthetic: oldest synthetic'), findsOneWidget);
-    await tester.tap(find.text('Newer'));
-    await tester.pumpAndSettle();
-    expect(find.text('synthetic: latest synthetic 0'), findsOneWidget);
-    allowed = false;
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pump();
-    expect(find.text('History unavailable or access denied.'), findsOneWidget);
-    expect(find.text('synthetic: latest synthetic 0'), findsNothing);
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, 'Older'))
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, 'Newer'))
-          .onPressed,
-      isNull,
-    );
-  });
+      await tester.pumpAndSettle();
+      expect(find.text('Retry history'), findsOneWidget);
+      client.failLoad = false;
+      await tester.tap(find.text('Retry history'));
+      await tester.pumpAndSettle();
+      expect(find.text('No earlier messages.'), findsOneWidget);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: LegacyOutbox(
+            entries: [
+              {
+                'route': '/v1/messages/room%3Alobby',
+                'body': {'body': 'Unsent text'},
+              },
+            ],
+          ),
+        ),
+      );
+      expect(find.text('Unsent text'), findsOneWidget);
+      expect(find.byTooltip('Copy unsent message'), findsOneWidget);
+      expect(find.text('Retry send'), findsNothing);
+      expect(find.text('Send'), findsNothing);
+      client.dispose();
+    },
+  );
 }

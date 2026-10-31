@@ -71,9 +71,11 @@ with tempfile.TemporaryDirectory(prefix='monastack-shared-') as directory:
         assert any(p['actor']=='hua-hao' for p in rt_a.presence())
         assert any(p['actor']=='le-pha' for p in rt_b.presence())
         message={'id':str(uuid.uuid4()),'body':'Synthetic shared message'}
-        assert request(member_port,'messages/room%3Alobby',message,b)[0]==201
-        assert any(m['id']==message['id'] for m in request(master_port,'messages/room%3Alobby',token=a)[1])
-        assert request(member_port,'messages/room%3Afinance',token=b)[0]==403
+        assert request(member_port,'messages/room%3Alobby',message,b)[0]==404
+        with sqlite3.connect(root/'master.sqlite3') as c:
+            c.execute("INSERT INTO messages VALUES (?,'room:lobby','hua-hao',?,1)",(message['id'],message['body']))
+        assert any(m['id']==message['id'] for m in request(master_port,'chat/legacy/room%3Alobby',token=a)[1])
+        assert request(member_port,'chat/legacy/room%3Afinance',token=b)[0]==403
         with sqlite3.connect(root/'master.sqlite3') as c:assert c.execute('SELECT COUNT(*) FROM messages').fetchone()[0]==1
         with sqlite3.connect(root/'member.sqlite3') as c:assert c.execute('SELECT COUNT(*) FROM messages').fetchone()[0]==0
         master.terminate();master.wait(timeout=5)

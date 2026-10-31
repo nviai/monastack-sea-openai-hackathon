@@ -12,6 +12,7 @@ mod jobs;
 mod journals;
 mod leave;
 mod live_agents;
+mod matrix;
 mod media;
 mod meetings;
 mod payments;
@@ -25,13 +26,13 @@ mod tasks;
 mod whiteboard;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::State,
     http::{HeaderMap, StatusCode},
     routing::get,
     Json, Router,
 };
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     env,
@@ -42,7 +43,7 @@ use std::{
 
 type Db = Arc<Mutex<Connection>>;
 /// Database schema version written by this node; newer databases are refused.
-const SCHEMA_VERSION: i64 = 23;
+const SCHEMA_VERSION: i64 = 24;
 type ApiError = (StatusCode, &'static str);
 fn err(code: StatusCode, msg: &'static str) -> ApiError {
     (code, msg)
@@ -131,6 +132,11 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     auth::initialize(&tx)?;
     live_agents::initialize(&tx)?;
     agent_config::initialize(&tx)?;
+    matrix::initialize(&tx)?;
+    // Names are metadata, never mapping keys. Existing overrides survive seeds.
+    for room in rooms {
+        tx.execute("INSERT OR IGNORE INTO matrix_room_details(office_room,name) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM rooms WHERE id=?1)",params![room["id"].as_str(),room["name"].as_str()])?;
+    }
     let seeded: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-v1')",
         [],
@@ -167,6 +173,12 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
                 params![id, member.as_str().ok_or("member")?],
             )?;
         }
+    }
+    for room in rooms {
+        tx.execute(
+            "INSERT OR IGNORE INTO matrix_room_details(office_room,name) VALUES (?1,?2)",
+            params![room["id"].as_str(), room["name"].as_str()],
+        )?;
     }
     jobs::seed_roles(&tx, actors)?;
     customers::seed_roles(&tx, actors)?;
@@ -297,103 +309,6 @@ async fn room_permissions(
     drop(statement);
     tx.commit().map_err(db_error)?;
     Ok(Json(result))
-}
-#[derive(Serialize, Debug)]
-struct Message {
-    id: String,
-    sender: String,
-    body: String,
-    created: i64,
-}
-#[derive(Deserialize)]
-struct NewMessage {
-    id: String,
-    body: String,
-}
-#[derive(Default, Deserialize)]
-struct MessageQuery {
-    before: Option<String>,
-}
-async fn read_messages(
-    State(state): State<Db>,
-    Path(scope): Path<String>,
-    headers: HeaderMap,
-    Query(query): Query<MessageQuery>,
-) -> Result<Json<Vec<Message>>, ApiError> {
-    let mut db = state.lock().unwrap();
-    let tx = db.transaction().map_err(db_error)?;
-    let who = actor(&tx, &headers)?;
-    let scope = scope_for(&tx, &who, &scope)?;
-    let before_row = if let Some(before) = query.before {
-        if before.len() < 16 || before.len() > 80 {
-            return Err(err(StatusCode::BAD_REQUEST, "invalid message cursor"));
-        }
-        let row: Option<i64> = tx
-            .query_row(
-                "SELECT rowid FROM messages WHERE scope=?1 AND id=?2",
-                params![scope, before],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(db_error)?;
-        Some(row.ok_or(err(StatusCode::NOT_FOUND, "message cursor not found"))?)
-    } else {
-        None
-    };
-    let mut stmt=tx.prepare("SELECT id,sender,body,created FROM messages WHERE scope=?1 AND (?2 IS NULL OR rowid < ?2) ORDER BY rowid DESC LIMIT 200").map_err(db_error)?;
-    let rows = stmt
-        .query_map(params![scope, before_row], |r| {
-            Ok(Message {
-                id: r.get(0)?,
-                sender: r.get(1)?,
-                body: r.get(2)?,
-                created: r.get(3)?,
-            })
-        })
-        .map_err(db_error)?;
-    let mut result = rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?;
-    result.reverse();
-    drop(stmt);
-    tx.commit().map_err(db_error)?;
-    Ok(Json(result))
-}
-async fn send_message(
-    State(state): State<Db>,
-    Path(scope): Path<String>,
-    headers: HeaderMap,
-    Json(m): Json<NewMessage>,
-) -> Result<StatusCode, ApiError> {
-    if m.id.len() < 16 || m.id.len() > 80 || m.body.trim().is_empty() || m.body.len() > 4000 {
-        return Err(err(StatusCode::BAD_REQUEST, "invalid message"));
-    }
-    let mut db = state.lock().unwrap();
-    let tx = db
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(db_error)?;
-    let who = actor(&tx, &headers)?;
-    let scope = scope_for(&tx, &who, &scope)?;
-    let existing: Option<(String, String, String)> = tx
-        .query_row(
-            "SELECT scope,sender,body FROM messages WHERE id=?1",
-            [&m.id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .optional()
-        .map_err(db_error)?;
-    if let Some(old) = existing {
-        return if old == (scope, who, m.body) {
-            Ok(StatusCode::OK)
-        } else {
-            Err(err(StatusCode::CONFLICT, "message id conflict"))
-        };
-    }
-    tx.execute(
-        "INSERT INTO messages VALUES (?1,?2,?3,?4,?5)",
-        params![m.id, scope, who, m.body, now()],
-    )
-    .map_err(db_error)?;
-    tx.commit().map_err(db_error)?;
-    Ok(StatusCode::CREATED)
 }
 /// Corridors are shared space authorized and chatted in as the lobby.
 const CORRIDOR_ROOM: &str = "lobby";
@@ -650,6 +565,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         copy_database(std::path::Path::new(source), std::path::Path::new(&path))?;
         eprintln!("Restore created and checked");
         return Ok(());
+    }
+    if args.len() == 1
+        && env::var_os("MONASTACK_MATRIX_DIR").is_some()
+        && env::var("MONASTACK_MATRIX_DISABLED").as_deref() != Ok("1")
+        && path.is_file()
+    {
+        let old = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let backed_up: bool = old.query_row(
+            "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='matrix-backup-v1')",
+            [],
+            |r| r.get(0),
+        )?;
+        drop(old);
+        if !backed_up {
+            let backups = runtime_paths::directory()?.join("backups");
+            std::fs::create_dir_all(&backups)?;
+            let destination = backups.join(format!(
+                "before-matrix-{}-{}.sqlite3",
+                now(),
+                uuid::Uuid::new_v4().simple()
+            ));
+            copy_database(&path, &destination)?;
+            Connection::open(&path)?.execute(
+                "INSERT INTO metadata(key,value) VALUES ('matrix-backup-v1',?1)",
+                [destination.to_string_lossy().as_ref()],
+            )?;
+        }
     }
     runtime_paths::create_parent(&path)?;
     let mut db = Connection::open(&path)?;
@@ -1159,10 +1101,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(room_admin::members).post(room_admin::change),
         )
         .route("/v1/room-admin/{room}/history", get(room_admin::history))
-        .route(
-            "/v1/messages/{scope}",
-            get(read_messages).post(send_message),
-        )
+        .route("/v1/chat/config", get(matrix::config))
+        .route("/v1/chat/authorize", axum::routing::post(matrix::authorize))
+        .route("/v1/chat/session", axum::routing::post(matrix::session))
+        .route("/v1/chat/users", get(matrix::users))
+        .route("/v1/chat/rooms", get(matrix::rooms))
+        .route("/v1/chat/dms", get(matrix::list_dms).post(matrix::dms))
+        .route("/v1/chat/legacy/{scope}", get(matrix::legacy))
         .route("/v1/realtime/ticket", axum::routing::post(realtime_ticket))
         .route("/v1/realtime/epoch", get(realtime_epoch_handler))
         .layer(axum::middleware::from_fn_with_state(
@@ -1242,7 +1187,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(_) => return Err("MONASTACK_REALTIME must be embedded, external or off".into()),
     };
-    let app = app.layer(axum::Extension(config));
+    let matrix = if shared_member {
+        None
+    } else {
+        matrix::Bridge::from_env()?
+    };
+    if let Some(bridge) = matrix.clone() {
+        matrix::spawn_reconcile(state.clone(), bridge);
+    }
+    let app = app
+        .layer(axum::Extension(config))
+        .layer(axum::Extension(matrix));
     let listener = tokio::net::TcpListener::bind((bind_host()?, port)).await?;
     eprintln!("office node listening on {}:{port}", bind_host()?);
     axum::serve(listener, app).await?;
@@ -1253,7 +1208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     const SEED: &str = include_str!("../../../data/seed/nviai/seed.v1.json");
-    fn setup() -> Db {
+    pub(super) fn setup() -> Db {
         let mut db = Connection::open_in_memory().unwrap();
         db.execute_batch("PRAGMA foreign_keys=ON").unwrap();
         initialize(&mut db, SEED).unwrap();
@@ -1502,176 +1457,6 @@ mod tests {
             .query_row("SELECT count(*) FROM actors", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 17);
-    }
-    #[tokio::test]
-    async fn chat_denial_idempotency_dm_and_revocation() {
-        let db = setup();
-        let scope = "room:finance".to_string();
-        let m = || {
-            Json(NewMessage {
-                id: "0123456789abcdef".into(),
-                body: "private".into(),
-            })
-        };
-        assert_eq!(
-            send_message(State(db.clone()), Path(scope.clone()), headers("an"), m())
-                .await
-                .unwrap_err()
-                .0,
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            send_message(State(db.clone()), Path(scope.clone()), headers("van"), m())
-                .await
-                .unwrap(),
-            StatusCode::CREATED
-        );
-        assert_eq!(
-            send_message(State(db.clone()), Path(scope.clone()), headers("van"), m())
-                .await
-                .unwrap(),
-            StatusCode::OK
-        );
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path(scope.clone()),
-                headers("van"),
-                Query(MessageQuery::default())
-            )
-            .await
-            .unwrap()
-            .0
-            .len(),
-            1
-        );
-        let dm = Path("dm:mai".to_string());
-        assert_eq!(
-            send_message(
-                State(db.clone()),
-                dm,
-                headers("an"),
-                Json(NewMessage {
-                    id: "abcdef0123456789".into(),
-                    body: "hello".into()
-                })
-            )
-            .await
-            .unwrap(),
-            StatusCode::CREATED
-        );
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path("dm:an".into()),
-                headers("mai"),
-                Query(MessageQuery::default())
-            )
-            .await
-            .unwrap()
-            .0
-            .len(),
-            1
-        );
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path("dm:mai".into()),
-                headers("van"),
-                Query(MessageQuery::default())
-            )
-            .await
-            .unwrap()
-            .0
-            .len(),
-            0
-        );
-        db.lock()
-            .unwrap()
-            .execute(
-                "DELETE FROM room_members WHERE room='finance' AND actor='van'",
-                [],
-            )
-            .unwrap();
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path(scope),
-                headers("van"),
-                Query(MessageQuery::default())
-            )
-            .await
-            .unwrap_err()
-            .0,
-            StatusCode::FORBIDDEN
-        );
-    }
-    #[tokio::test]
-    async fn chat_history_cursor_is_scoped_and_returns_older_pages() {
-        let db = setup();
-        {
-            let conn = db.lock().unwrap();
-            for i in 0..205 {
-                conn.execute(
-                    "INSERT INTO messages(id,scope,sender,body,created) VALUES (?1,'room:lobby','an',?2,1)",
-                    params![format!("synthetic-message-{i:04}"), format!("message {i}")],
-                ).unwrap();
-            }
-            conn.execute("INSERT INTO messages(id,scope,sender,body,created) VALUES ('synthetic-private-0001','room:finance','van','private',1)", []).unwrap();
-        }
-        let latest = read_messages(
-            State(db.clone()),
-            Path("room:lobby".into()),
-            headers("an"),
-            Query(MessageQuery::default()),
-        )
-        .await
-        .unwrap()
-        .0;
-        assert_eq!(latest.len(), 200);
-        assert_eq!(latest.first().unwrap().id, "synthetic-message-0005");
-        let older = read_messages(
-            State(db.clone()),
-            Path("room:lobby".into()),
-            headers("an"),
-            Query(MessageQuery {
-                before: Some(latest.first().unwrap().id.clone()),
-            }),
-        )
-        .await
-        .unwrap()
-        .0;
-        assert_eq!(older.len(), 5);
-        assert_eq!(older.first().unwrap().id, "synthetic-message-0000");
-        assert_eq!(older.last().unwrap().id, "synthetic-message-0004");
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path("room:lobby".into()),
-                headers("an"),
-                Query(MessageQuery {
-                    before: Some("synthetic-private-0001".into())
-                })
-            )
-            .await
-            .unwrap_err()
-            .0,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            read_messages(
-                State(db.clone()),
-                Path("room:finance".into()),
-                headers("an"),
-                Query(MessageQuery {
-                    before: Some("synthetic-private-0001".into())
-                })
-            )
-            .await
-            .unwrap_err()
-            .0,
-            StatusCode::FORBIDDEN
-        );
     }
     async fn ticket_headers(db: &Db, config: &RealtimeConfig, who: &str) -> HeaderMap {
         let ticket = realtime_ticket(

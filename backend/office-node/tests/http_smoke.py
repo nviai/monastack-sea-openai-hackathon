@@ -607,11 +607,12 @@ with tempfile.TemporaryDirectory(prefix='monastack-test-') as directory:
         assert [e['action'] for e in request('van','GET',f'whiteboard/notes/{note}/history')[1]]==['created','updated','deleted']
         assert 'finance' in request('van','GET','rooms')[1]
         assert 'finance' not in request('an','GET','rooms')[1]
-        path='messages/'+urllib.parse.quote('room:finance',safe='')
+        path='chat/legacy/'+urllib.parse.quote('room:finance',safe='')
         message={'id':secrets.token_hex(16),'body':'private test message'}
         assert request('an','GET',path)[0]==403
-        assert request('van','POST',path,message)[0]==201
-        assert request('van','POST',path,message)[0]==200
+        assert request('van','POST','messages/room%3Afinance',message)[0]==404
+        with sqlite3.connect(db) as connection:
+            connection.execute("INSERT INTO messages VALUES (?, 'room:finance', 'van', ?, 100)",(message['id'],message['body']))
         # The local operator can change restricted-room membership; it is not
         # a remotely authenticated administration interface.
         assert subprocess.run([str(binary),'room','grant','finance','an'],env=env).returncode==0
@@ -625,8 +626,9 @@ with tempfile.TemporaryDirectory(prefix='monastack-test-') as directory:
         assert request('an','GET',path)[0]==403
         with sqlite3.connect(db) as connection:
             assert connection.execute("SELECT action FROM security_audit WHERE subject='an' AND action IN ('room_grant:finance','room_revoke:finance') ORDER BY seq").fetchall()==[('room_grant:finance',),('room_revoke:finance',)]
-        lobby='messages/'+urllib.parse.quote('room:lobby',safe='')
-        assert request('an','POST',lobby,{'id':secrets.token_hex(16),'body':'hello'})[0]==201
+        lobby='chat/legacy/'+urllib.parse.quote('room:lobby',safe='')
+        with sqlite3.connect(db) as connection:
+            connection.execute("INSERT INTO messages VALUES (?, 'room:lobby', 'an', 'hello', 100)",(secrets.token_hex(16),))
         assert len(request('van','GET',lobby)[1])==1
         # Presence lives in the realtime capability and is authorized by tickets.
         rt = {who: Realtime(port, tokens[who]) for who in ('an', 'van')}

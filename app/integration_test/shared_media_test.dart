@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:uuid/uuid.dart';
+import 'package:monastack/features/chat/data/matrix_chat_client.dart';
+import 'package:monastack/features/chat/data/matrix_session.dart';
+import 'package:monastack/features/chat/domain/chat_client.dart';
+import 'package:monastack/features/identity/credential_store.dart';
 import 'package:monastack/features/identity/auth_api.dart';
 import 'package:monastack/features/office/presence/realtime_session.dart';
 import 'package:monastack/features/office/voice/voice_controller.dart';
@@ -64,7 +68,9 @@ void main() {
           realtime: rtB,
           session: () => sb,
         );
+    bool restoreAgentPause = false;
     Timer? heartbeat;
+    MatrixChatClient? chatA, chatB;
     var seq = 0;
     Future<void> publish() async {
       final n = ++seq;
@@ -87,6 +93,22 @@ void main() {
     }
 
     try {
+      if (Platform.environment['MONASTACK_TEST_LIVE_AGENT'] == '1') {
+        final status = await apiA.call(
+          'GET',
+          '/v1/live-agents/rooms/lobby',
+          bearer: a.accessToken,
+        ) as Map;
+        restoreAgentPause = status['state'] == 'paused';
+        if (restoreAgentPause) {
+          await apiA.call(
+            'POST',
+            '/v1/live-agents/rooms/lobby',
+            body: {'action': 'resume'},
+            bearer: a.accessToken,
+          );
+        }
+      }
       final ticketA = await apiA.call(
         'POST',
         '/v1/realtime/ticket',
@@ -144,6 +166,69 @@ void main() {
           'live agent: shared Mona received by both Flutter clients; local mute/unmute preserves the other peer; capture stays off',
         );
       }
+      if (Platform.environment['MONASTACK_TEST_MATRIX_CHAT'] == '1') {
+        MatrixChatClient chat(
+          AuthApi api,
+          String access,
+          String actor,
+          String node,
+        ) => MatrixChatClient(
+          MatrixSession(
+            request: (method, path, [body]) =>
+                api.call(method, path, body: body, bearer: access),
+            store: MemoryCredentialStore(),
+            node: node,
+            actor: actor,
+          ),
+        );
+        chatA = chat(apiA, a.accessToken, a.actor, 'integration-master');
+        chatB = chat(apiB, b.accessToken, b.actor, 'integration-member');
+        await Future.wait([chatA.start(), chatB.start()]);
+        await until(
+          () =>
+              chatA!.phase == ChatPhase.ready &&
+              chatB!.phase == ChatPhase.ready &&
+              chatA.rooms.any((r) => r.officeRoom == 'lobby') &&
+              chatB.rooms.any((r) => r.officeRoom == 'lobby'),
+          'two actual Matrix SDK clients connected through master and member',
+        );
+        final lobbyA = chatA.rooms
+            .firstWhere((r) => r.officeRoom == 'lobby')
+            .id;
+        final lobbyB = chatB.rooms
+            .firstWhere((r) => r.officeRoom == 'lobby')
+            .id;
+        expect(lobbyA, lobbyB);
+        await Future.wait([chatA.load(lobbyA), chatB.load(lobbyB)]);
+        final marker = 'Matrix + LiveKit integration ${const Uuid().v4()}';
+        final message = await chatA.send(lobbyA, marker, const Uuid().v4());
+        await until(
+          () => chatB!
+              .messages(lobbyB)
+              .any((m) => m.id == message && m.body == marker),
+          'Matrix delivers a real message while LiveKit stays connected',
+        );
+        expect(va.value.phase, VoicePhase.joined);
+        expect(vb.value.phase, VoicePhase.joined);
+        final appearances = await apiA.call(
+          'GET',
+          '/v1/agents/appearances',
+          bearer: a.accessToken,
+        ) as List;
+        expect(appearances.map((x) => x['name']).toSet(), {
+          'Mona',
+          'Atlas',
+          'Iris',
+          'Nova',
+          'Leo',
+          'Luna',
+        });
+        expect(appearances.where((x) => x['gender'] == 'female').length, 4);
+        await chatA.redact(lobbyA, message);
+        debugPrint(
+          'matrix + live agents: real Dart SDK message crossed nodes while shared LiveKit remained connected; all six configured avatars available',
+        );
+      }
       final pa = await rtA.request('GET', '/v1/presence') as List;
       final pb = await rtB.request('GET', '/v1/presence') as List;
       expect(pa.any((p) => p['actor'] == 'hua-hao'), isTrue);
@@ -153,11 +238,20 @@ void main() {
       );
     } finally {
       heartbeat?.cancel();
+      await chatA?.signOut();
+      await chatB?.signOut();
       await va.leave();
       await vb.leave();
       va.dispose();
       vb.dispose();
       for (final cleanup in <Future<dynamic> Function()>[
+        if (restoreAgentPause)
+          () => apiA.call(
+            'POST',
+            '/v1/live-agents/rooms/lobby',
+            body: {'action': 'pause'},
+            bearer: a.accessToken,
+          ),
         () => rtA.request('DELETE', '/v1/presence/$sa'),
         () => rtB.request('DELETE', '/v1/presence/$sb'),
         () => apiA.call('POST', '/v1/auth/logout', bearer: a.accessToken),

@@ -154,7 +154,10 @@ class VoiceController extends ValueNotifier<VoiceState> {
   Future<void> setAgentMuted(bool muted) async {
     agentMuted = muted;
     await _connection?.setAgentMuted(muted);
-    if (!_disposed) notifyListeners();
+    if (!_disposed) {
+      _update();
+      notifyListeners();
+    }
   }
 
   Future<void> join(String room) async {

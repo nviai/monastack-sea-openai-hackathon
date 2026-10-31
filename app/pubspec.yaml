@@ -43,6 +43,14 @@ dependencies:
   path_provider: ^2.1.6
   flutter_secure_storage: ^11.2.0
   rive: 0.14.11
+  matrix: 14.2.0
+  flutter_local_notifications: 22.3.3
+  file_selector: 1.1.0
+  url_launcher: 6.3.2
+  flutter_markdown_plus: 1.0.12
+  sqflite_common_ffi: 2.4.5
+  mime: 2.1.0
+  http: 1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +80,12 @@ flutter:
     - assets/map.v2.json
     - assets/brand/monastack-logo.png
     - assets/animations/agent-mouth.riv
+    - assets/fonts/inter-4.1/LICENSE.txt
+  fonts:
+    # Inter 4.1 (OFL-1.1), used inside the chat dialog only.
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter-4.1/InterVariable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

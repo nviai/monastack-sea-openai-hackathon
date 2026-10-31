@@ -1743,7 +1743,8 @@ pub async fn forward_to_master(State(state): State<Db>, request: Request, next: 
     let path = request.uri().path().to_string();
     let shared =
         std::env::var("MONASTACK_WORKSPACE_MODE").unwrap_or_else(|_| "shared".into()) == "shared";
-    let forwarded = path.starts_with("/v1/auth/")
+    let forwarded = path.starts_with("/v1/chat/")
+        || path.starts_with("/v1/auth/")
         || path.starts_with("/v1/admin/")
         || path == "/v1/setup"
         || (shared

@@ -21,7 +21,8 @@ class FakeConnection extends VoiceConnection {
   @override
   Set<String> speaking() => talking;
   @override
-  Set<String> hearing() => others;
+  Set<String> hearing() =>
+      others.where((actor) => !agentMuted || actor != 'mona').toSet();
   @override
   Map<String, lk.VideoTrack> videos() => const {};
   @override
@@ -123,8 +124,15 @@ void main() {
     expect(connections.single.camera, false);
     await voice.autoJoinAgentRoom('lobby');
     expect(requests.length, 1);
+    connections.single.others = {'mona', 'human-peer'};
+    connections.single.onChanged?.call();
+    expect(voice.value.hearing, {'mona', 'human-peer'});
     await voice.setAgentMuted(true);
     expect(connections.single.agentMuted, true);
+    expect(voice.value.hearing, {'human-peer'});
+    await voice.setAgentMuted(false);
+    expect(voice.value.hearing, {'mona', 'human-peer'});
+    await voice.setAgentMuted(true);
     await voice.leave();
     await voice.autoJoinAgentRoom('lobby');
     expect(requests.length, 1);

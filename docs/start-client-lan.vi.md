@@ -1,6 +1,6 @@
-# Mở client kết nối server LAN 192.168.224.217
+# Mở client kết nối server LAN
 
-Server hiện tại đã được cấu hình để các app dùng chung API, presence và LiveKit qua IP LAN:
+Các app dùng chung API, presence và LiveKit qua IP LAN. Địa chỉ `192.168.224.217` dưới đây là ví dụ cấu hình ban đầu; dùng IP hiện tại của server:
 
 | Dịch vụ | Địa chỉ |
 | --- | --- |
@@ -15,7 +15,7 @@ Trên máy client macOS có source mới, Flutter, Rust/Cargo và Xcode, chạy 
 ./tools/start-client.sh
 ```
 
-Script mặc định kết nối `192.168.224.217:47830`, kiểm tra server, build app macOS và mở app với đúng địa chỉ. Không chạy node hoặc LiveKit trên client; không cần API key OpenAI trên client. Đăng nhập bằng tài khoản seed thông thường.
+Script chọn host theo thứ tự: `--host`, biến `MONASTACK_SERVER_HOST`, file `runtime/server-address.json`, cuối cùng mới dùng địa chỉ ví dụ `192.168.224.217`. Port mặc định là `47830`. Script kiểm tra server, build app macOS và mở app với đúng địa chỉ. Không chạy node hoặc LiveKit trên client; không cần API key OpenAI trên client. Đăng nhập bằng tài khoản seed thông thường.
 
 Sau khi đã build phiên bản hỗ trợ LAN này, những lần sau có thể bỏ qua build:
 
@@ -37,7 +37,7 @@ Máy client phải truy cập được các cổng trong bảng trên. Cấu hì
 
 ## Cấu hình server hiện tại
 
-`runtime/server-address.json` chứa `{"host":"192.168.224.217"}`. `tools/local_office.py` dùng địa chỉ này để:
+`runtime/server-address.json` chứa IP hiện tại, ví dụ `{"host":"192.168.224.217"}`. `tools/local_office.py` dùng địa chỉ này để:
 
 - Trả `MONASTACK_REALTIME_PUBLIC_URL=http://192.168.224.217:47831` cho app.
 - Trả `MONASTACK_MEDIA_PUBLIC_URL=ws://192.168.224.217:7880` cho app.
@@ -45,4 +45,8 @@ Máy client phải truy cập được các cổng trong bảng trên. Cấu hì
 
 Control API của LiveKit vẫn được node server gọi nội bộ qua `127.0.0.1:7880`; key media không gửi cho client.
 
-Khi IP server thay đổi, cập nhật file trên, dừng rồi chạy lại `tools/local_office.py`, và truyền IP mới cho `start-client.sh --host ...`. Có thể override địa chỉ server bằng biến `MONASTACK_SERVER_HOST` khi chạy local_office.py. Chỉ app sử dụng `MONASTACK_NODE_HOST`; master/member enrollment vẫn giữ cơ chế loopback/SSH hiện có.
+Khi IP server thay đổi, cập nhật file trên, dừng rồi chạy lại `tools/local_office.py`, Script client trên cùng máy sẽ đọc địa chỉ mới; trên máy khác truyền IP mới bằng `start-client.sh --host ...`. Có thể override địa chỉ server bằng biến `MONASTACK_SERVER_HOST` khi chạy local_office.py. Chỉ app sử dụng `MONASTACK_NODE_HOST`; master/member enrollment vẫn giữ cơ chế loopback/SSH hiện có.
+
+## Matrix chat
+
+App lấy địa chỉ Matrix từ `GET /v1/chat/config` qua node hiện tại. Server phải được khởi động với IP LAN của nó (`MONASTACK_SERVER_HOST=<IP-LAN-server>`), không phải 127.0.0.1, nếu không client báo "Chat could not connect". Server cần quảng bá `MONASTACK_MATRIX_PUBLIC_URL=http://<IP-LAN-server>:8008` và mở cổng 8008 cho client. Client không cần container hoặc thông tin admin. Không mở cổng 8009 ra LAN. Xem [Matrix chat operations](matrix-chat-operations.md).
