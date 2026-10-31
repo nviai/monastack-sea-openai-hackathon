@@ -6,6 +6,9 @@ pub enum JobState {
     HostClaimed,
     HostReported,
     Cancelled,
+    WaitingInput,
+    Completed,
+    Rejected,
 }
 impl JobState {
     pub fn parse(s: &str) -> Option<Self> {
@@ -14,6 +17,9 @@ impl JobState {
             "approved_waiting" => Some(Self::ApprovedWaiting),
             "host_claimed" => Some(Self::HostClaimed),
             "host_reported" => Some(Self::HostReported),
+            "waiting_input" => Some(Self::WaitingInput),
+            "completed" => Some(Self::Completed),
+            "rejected" => Some(Self::Rejected),
             "cancelled" => Some(Self::Cancelled),
             _ => None,
         }
@@ -25,6 +31,7 @@ impl JobState {
                 | (Self::Proposed, Self::Cancelled)
                 | (Self::ApprovedWaiting, Self::Cancelled)
                 | (Self::HostClaimed, Self::Cancelled)
+                | (Self::WaitingInput, Self::Cancelled)
         )
     }
 }

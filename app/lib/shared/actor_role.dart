@@ -19,3 +19,31 @@ String actorRoleLabel(Object? value) => (value as String? ?? '')
       },
     )
     .join(', ');
+
+/// Agent specialty is presentation metadata, never an authorization role.
+String agentTitle(Object? id) => switch (id) {
+  'mona' => 'Office Assistant',
+  'dev-agent' => 'Software Engineer',
+  'qa-agent' => 'QA Engineer',
+  'pm-agent' => 'Product Manager',
+  'sales-agent' => 'Sales Specialist',
+  'cskh-agent' => 'Customer Support',
+  _ => 'AI Agent',
+};
+
+String agentDisplayName(Object? id, Object? name) =>
+    '${name ?? id} · ${agentTitle(id)}';
+
+String actorDisplayName(Map<String, dynamic> actor) => actor['kind'] == 'agent'
+    ? agentDisplayName(actor['id'], actor['name'])
+    : actor['name'] as String;
+
+String agentDefaultName(Object? id) => switch (id) {
+  'mona' => 'Mona',
+  'dev-agent' => 'Atlas',
+  'qa-agent' => 'Iris',
+  'pm-agent' => 'Nova',
+  'sales-agent' => 'Leo',
+  'cskh-agent' => 'Luna',
+  _ => id?.toString() ?? 'Agent',
+};

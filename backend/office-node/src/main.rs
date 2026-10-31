@@ -4,6 +4,7 @@ mod auth;
 mod bookings;
 mod contracts;
 mod customers;
+mod demo_projects;
 mod documents;
 mod expenses;
 mod hosts;
@@ -15,6 +16,7 @@ mod live_agents;
 mod matrix;
 mod media;
 mod meetings;
+mod notifications;
 mod payments;
 mod realtime;
 mod room_admin;
@@ -23,7 +25,9 @@ mod sales;
 mod seed_updates;
 mod support;
 mod tasks;
+mod ui_actions;
 mod whiteboard;
+mod workflow;
 
 use axum::{
     extract::State,
@@ -43,7 +47,7 @@ use std::{
 
 type Db = Arc<Mutex<Connection>>;
 /// Database schema version written by this node; newer databases are refused.
-const SCHEMA_VERSION: i64 = 24;
+const SCHEMA_VERSION: i64 = 27;
 type ApiError = (StatusCode, &'static str);
 fn err(code: StatusCode, msg: &'static str) -> ApiError {
     (code, msg)
@@ -113,6 +117,9 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
         )?;
     }
     tasks::initialize(&tx)?;
+    notifications::initialize(&tx)?;
+    workflow::initialize(&tx)?;
+    ui_actions::initialize(&tx)?;
     jobs::initialize(&tx)?;
     documents::initialize(&tx)?;
     customers::initialize(&tx)?;
@@ -146,6 +153,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
         jobs::seed_roles(&tx, actors)?;
         customers::seed_roles(&tx, actors)?;
         seed_updates::apply(&tx)?;
+        demo_projects::seed(&tx)?;
         agent_config::seed(&tx)?;
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -183,6 +191,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     jobs::seed_roles(&tx, actors)?;
     customers::seed_roles(&tx, actors)?;
     seed_updates::apply(&tx)?;
+    demo_projects::seed(&tx)?;
     agent_config::seed(&tx)?;
     tx.execute("INSERT INTO metadata VALUES ('seed-v1','applied')", [])?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -613,6 +622,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.len() == 1 {
         auth::migrate_seed_usernames(&mut db)?;
+        auth::migrate_demo_roster(&mut db)?;
     }
 
     match args.get(1).map(String::as_str) {
@@ -889,10 +899,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(live_agents::propose),
         )
         .layer(axum::Extension(live_agent_service.clone()))
+        .route(
+            "/v1/voice-worker/ui",
+            axum::routing::post(live_agents::operate_ui),
+        )
+        .route("/v1/ui/sync", axum::routing::post(ui_actions::sync))
         .route("/v1/agents/capabilities", get(agent_chat::capabilities))
         .route(
             "/v1/agents/{agent}/chat",
             axum::routing::post(agent_chat::chat),
+        )
+        .route(
+            "/v1/host/jobs/{job}/question",
+            axum::routing::post(hosts::ask),
+        )
+        .route(
+            "/v1/host/jobs/{job}/heartbeat",
+            axum::routing::post(hosts::heartbeat),
+        )
+        .route(
+            "/v1/voice-worker/answer-question",
+            axum::routing::post(live_agents::answer_question),
         )
         .route("/v1/host/jobs", get(hosts::jobs))
         .route("/v1/host/claim", axum::routing::post(hosts::claim))
@@ -1029,8 +1056,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(documents::read).post(documents::update),
         )
         .route("/v1/documents/{document}/history", get(documents::history))
+        .route(
+            "/v1/workflow/settings",
+            get(workflow::settings).post(workflow::configure),
+        )
+        .route(
+            "/v1/workflow/questions/{id}/answer",
+            axum::routing::post(workflow::answer),
+        )
+        .route("/v1/notifications", get(notifications::list))
+        .route(
+            "/v1/notifications/{id}/read",
+            axum::routing::post(notifications::read),
+        )
         .route("/v1/jobs", get(jobs::list).post(jobs::create))
         .route("/v1/jobs/{job}/history", get(jobs::history))
+        .route("/v1/jobs/{job}/review", axum::routing::post(jobs::review))
         .route(
             "/v1/jobs/{job}/decision",
             axum::routing::post(jobs::decision),

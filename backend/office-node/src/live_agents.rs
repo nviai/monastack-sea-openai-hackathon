@@ -380,7 +380,23 @@ pub async fn plans(
             if paused || !config.enabled || users.is_empty() {
                 None
             } else {
-                Some(json!({"room":room,"agent":agent,"users":users,"epoch":epoch,"revision":revision,"config":config}))
+                {
+                    let mut attention = Vec::new();
+                    if super::workflow::channel(&db).ok().as_deref() == Some("voice") {
+                        for user in &users {
+                            if let Some(actor) = user["actor"].as_str() {
+                                let pending: i64 = db.query_row("SELECT COUNT(*) FROM task_notifications WHERE recipient=?1 AND read=0",[actor],|r|r.get(0)).unwrap_or(0);
+                                if pending > 0 {
+                                    let public_question: Option<String> = db.query_row("SELECT q.question FROM job_questions q JOIN agent_jobs j ON j.id=q.job JOIN tasks t ON t.id=j.task WHERE j.created_by=?1 AND q.answer IS NULL AND j.state='waiting_input' AND NOT EXISTS(SELECT 1 FROM project_rules WHERE project=t.project) ORDER BY q.created DESC LIMIT 1",[actor],|r|r.get(0)).optional().ok().flatten();
+                                    attention.push(json!({"actor":actor,"count":pending,"public_question":public_question}));
+                                }
+                            }
+                        }
+                    }
+                    attention.sort_by_key(|a| a["actor"].as_str().unwrap_or("").to_owned());
+                    attention.dedup_by(|a,b| a["actor"] == b["actor"]);
+                    Some(json!({"room":room,"agent":agent,"users":users,"epoch":epoch,"revision":revision,"config":config,"attention":attention}))
+                }
             }
         })
         .collect();
@@ -638,8 +654,16 @@ pub async fn context(
         .map_err(db_error)?;
     let mut q=db.prepare("SELECT t.id,t.title,t.state,t.project FROM tasks t WHERE NOT EXISTS(SELECT 1 FROM project_rules r WHERE r.project=t.project) ORDER BY t.rowid DESC LIMIT 50").map_err(db_error)?;
     let tasks=q.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"state":r.get::<_,String>(2)?,"project":r.get::<_,String>(3)?}))).map_err(db_error)?.collect::<Result<Vec<_>,_>>().map_err(db_error)?;
+    let mut q = db.prepare("SELECT q.id,q.question FROM job_questions q JOIN agent_jobs j ON j.id=q.job JOIN tasks t ON t.id=j.task WHERE j.created_by=?1 AND q.answer IS NULL AND j.state='waiting_input' AND NOT EXISTS(SELECT 1 FROM project_rules r WHERE r.project=t.project) LIMIT 10").map_err(db_error)?;
+    let questions = q
+        .query_map([&body.actor], |r| {
+            Ok(json!({"id":r.get::<_,String>(0)?,"question":r.get::<_,String>(1)?}))
+        })
+        .map_err(db_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_error)?;
     Ok(Json(
-        json!({"projects":projects,"tasks":tasks,"scope":"workspace-visible records only; private results must not be spoken to the room"}),
+        json!({"projects":projects,"tasks":tasks,"questions":questions,"scope":"workspace-visible records only; private results must not be spoken to the room"}),
     ))
 }
 pub async fn propose(
@@ -1273,5 +1297,101 @@ pub async fn management(
     .map_err(db_error)?;
     Ok(Json(
         json!({"room":target,"selected":selected,"paused":paused}),
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct VoiceAnswer {
+    room: String,
+    lease: String,
+    actor: String,
+    question: String,
+    answer: String,
+}
+pub async fn answer_question(
+    Extension(s): Extension<Arc<Service>>,
+    headers: HeaderMap,
+    Json(body): Json<VoiceAnswer>,
+) -> Result<Json<Value>, ApiError> {
+    s.worker(&headers)?;
+    let mut db = s.db.lock().unwrap();
+    let mem = s.memory.lock().unwrap();
+    let lease = s.requesting_actor(&db, &mem, &body.room, &body.lease, &body.actor)?;
+    super::agent_config::allowed(&db, &lease.agent, "tasks.propose")?;
+    // A shared voice channel must never expose a private ticket.
+    let public: bool=db.query_row("SELECT EXISTS(SELECT 1 FROM job_questions q JOIN agent_jobs j ON j.id=q.job JOIN tasks t ON t.id=j.task WHERE q.id=?1 AND j.created_by=?2 AND NOT EXISTS(SELECT 1 FROM project_rules WHERE project=t.project))",params![body.question,body.actor],|r|r.get(0)).map_err(db_error)?;
+    if !public {
+        return Err(err(StatusCode::FORBIDDEN, "use private notification reply"));
+    }
+    super::workflow::answer_as(
+        &mut db,
+        &body.actor,
+        &body.question,
+        super::workflow::Answer {
+            body: body.answer,
+            attachments: vec![],
+        },
+    )?;
+    Ok(Json(json!({"state":"answered"})))
+}
+
+#[derive(Deserialize)]
+pub struct UiWork {
+    room: String,
+    lease: String,
+    actor: String,
+    #[serde(default)]
+    action: Option<Value>,
+}
+pub async fn operate_ui(
+    Extension(s): Extension<Arc<Service>>,
+    headers: HeaderMap,
+    Json(body): Json<UiWork>,
+) -> Result<Json<Value>, ApiError> {
+    s.worker(&headers)?;
+    let command_id = {
+        let db = s.db.lock().unwrap();
+        let mem = s.memory.lock().unwrap();
+        s.requesting_actor(&db, &mem, &body.room, &body.lease, &body.actor)?;
+        let users = Service::users(
+            &db,
+            &mem,
+            &body.room,
+            realtime_epoch(&db).map_err(db_error)?,
+        );
+        let sessions: Vec<_> = users.iter().filter(|u| u["actor"] == body.actor).collect();
+        if sessions.len() != 1 {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "use one active app session for voice UI control",
+            ));
+        }
+        let session = sessions[0]["session"].as_str().unwrap_or("");
+        if let Some(action) = &body.action {
+            super::ui_actions::enqueue(&db, &body.actor, session, action)?
+        } else {
+            return Ok(Json(
+                json!({"controls":super::ui_actions::controls(&db,&body.actor,session)?}),
+            ));
+        }
+    };
+    for _ in 0..25 {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let db = s.db.lock().unwrap();
+        let result: Option<String> = db
+            .query_row(
+                "SELECT result FROM ui_commands WHERE id=?1",
+                [&command_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?
+            .flatten();
+        if let Some(result) = result {
+            return Ok(Json(json!({"result":result})));
+        }
+    }
+    Ok(Json(
+        json!({"result":"Delivery pending; do not repeat the action or claim success."}),
     ))
 }

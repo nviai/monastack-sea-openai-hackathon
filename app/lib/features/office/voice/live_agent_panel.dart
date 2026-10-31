@@ -1,3 +1,4 @@
+import 'package:monastack/shared/actor_role.dart';
 import 'package:flutter/material.dart';
 
 import 'voice_controller.dart';
@@ -60,7 +61,7 @@ class _LiveAgentPanelState extends State<LiveAgentPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${data['display_name'] ?? data['selected']} · ${data['state']}',
+                  '${agentDisplayName(data['selected'], data['display_name'])} · ${data['state']}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
@@ -72,26 +73,39 @@ class _LiveAgentPanelState extends State<LiveAgentPanel> {
                 if (data['message'] is String &&
                     (data['message'] as String).isNotEmpty)
                   Text(data['message'] as String),
+                if (agents.length > 1)
+                  DropdownButton<String>(
+                    isExpanded: true,
+                    value: data['selected'] as String,
+                    items: [
+                      for (final agent in agents)
+                        DropdownMenuItem(
+                          value: agent as String,
+                          child: Text(
+                            agentDisplayName(
+                              agent,
+                              agent == data['selected']
+                                  ? data['display_name'] ??
+                                        agentDefaultName(agent)
+                                  : agentDefaultName(agent),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (agent) => act(
+                            '/v1/live-agents/rooms/${data['room']}',
+                            {'action': 'select', 'agent': agent},
+                          ),
+                  ),
                 Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (agents.length > 1)
-                      DropdownButton<String>(
-                        value: data['selected'] as String,
-                        items: [
-                          for (final agent in agents)
-                            DropdownMenuItem(
-                              value: agent as String,
-                              child: Text(agent),
-                            ),
-                        ],
-                        onChanged: busy
-                            ? null
-                            : (agent) => act(
-                                '/v1/live-agents/rooms/${data['room']}',
-                                {'action': 'select', 'agent': agent},
-                              ),
-                      ),
                     ValueListenableBuilder<VoiceState>(
                       valueListenable: widget.controller,
                       builder: (context, _, child) {

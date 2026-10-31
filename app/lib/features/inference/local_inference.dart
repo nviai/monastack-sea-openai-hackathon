@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -93,7 +95,7 @@ class _LocalInferenceState extends State<LocalInference> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 620,
       height: 570,

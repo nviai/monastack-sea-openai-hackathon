@@ -1,4 +1,5 @@
 import 'package:monastack/features/agents/agent_configuration.dart';
+import 'package:monastack/features/agents/ui_actions.dart';
 import 'package:monastack/features/office/voice/live_agent_panel.dart';
 import 'package:monastack/features/inference/local_inference.dart';
 import 'package:monastack/features/sync/outbox_review.dart';
@@ -37,6 +38,7 @@ import 'package:monastack/features/knowledge/document_library.dart';
 import 'package:monastack/features/agents/job_queue.dart';
 import 'package:monastack/features/agents/agent_chat.dart';
 import 'package:monastack/features/tasks/task_board.dart';
+import 'package:monastack/features/tasks/notification_inbox.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -67,8 +69,10 @@ class Collaboration extends StatefulWidget {
     this.faces,
     this.company = '',
     this.onWorkspaceName,
+    this.onGoToRoom,
   });
   final String room;
+  final void Function(String)? onGoToRoom;
   final ValueNotifier<List<int>> position;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
   final List<Map<String, dynamic>> actors;
@@ -95,6 +99,65 @@ class Collaboration extends StatefulWidget {
 }
 
 class CollaborationState extends _CollaborationConnection {
+  late final uiActions = UiActions(
+    root: () => context,
+    active: () => mounted && auth.active && !disconnecting,
+    navigate: (screen) => unawaited(openTool(screen)),
+    extraActions: () => {
+      if (widget.onGoToRoom != null)
+        for (final room in widget.rooms)
+          'Go to room ${room['name']}': () =>
+              widget.onGoToRoom!(room['id'] as String),
+    },
+  );
+
+  bool uiSyncBusy = false;
+  final uiResults = <Map<String, String>>[];
+  @override
+  Future<void> syncUiActions() async {
+    if (uiSyncBusy || !mounted || !auth.active || disconnecting) return;
+    uiSyncBusy = true;
+    final currentSession = session;
+    final currentIdentity = identity;
+    try {
+      final results = List<Map<String, String>>.of(uiResults);
+      final response = await request('POST', '/v1/ui/sync', {
+        'session': currentSession,
+        'controls': uiActions.snapshot(),
+        'results': results,
+      }) as Map;
+      if (!mounted ||
+          session != currentSession ||
+          identity != currentIdentity ||
+          !auth.active) {
+        uiResults.clear();
+        return;
+      }
+      uiResults.removeWhere((r) => results.contains(r));
+      final command = response['command'] as Map?;
+      if (command != null) {
+        String outcome;
+        try {
+          outcome = await uiActions.execute(
+            Map<String, dynamic>.from(command['action'] as Map),
+          );
+        } catch (_) {
+          outcome = 'Control unavailable or changed. No success confirmed.';
+        }
+        if (session == currentSession && identity == currentIdentity) {
+          uiResults.add({
+            'id': command['command_id'] as String,
+            'result': outcome,
+          });
+        }
+      }
+    } catch (_) {
+      // UI delivery must not break presence; pending acknowledgments retry.
+    } finally {
+      uiSyncBusy = false;
+    }
+  }
+
   Future<void> openWorkspaceTools() async {
     if (identity == null) return;
     final choice = await showDialog<String>(
@@ -109,11 +172,24 @@ class CollaborationState extends _CollaborationConnection {
       ),
     );
     if (choice == null || !mounted) return;
+    await openTool(choice);
+  }
+
+  Future<void> openTool(String choice) async {
+    if (!mounted || !auth.active) return;
+    if (choice.startsWith('agent:')) {
+      openAgentChat(choice.substring(6));
+      return;
+    }
     if (choice == 'chat') {
       openChat();
       return;
     }
     final Widget target = switch (choice) {
+      'notifications' => NotificationInbox(
+        request: request,
+        admin: auth.account?.admin ?? false,
+      ),
       'tasks' => TaskBoard(
         request: taskRequest,
         actors: widget.actors,
@@ -132,7 +208,11 @@ class CollaborationState extends _CollaborationConnection {
       'people' => PeopleAdmin(request: request, account: auth.account!),
       'company' => CompanyAdmin(request: request, account: auth.account!),
       'agent-chat' => AlertDialog(
-        content: AgentChat(request: request, actors: widget.actors),
+        content: AgentChat(
+          request: request,
+          actors: widget.actors,
+          uiActions: uiActions,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -209,6 +289,7 @@ class CollaborationState extends _CollaborationConnection {
           request: request,
           actors: widget.actors,
           initialAgent: agent,
+          uiActions: uiActions,
         ),
         actions: [
           TextButton(
@@ -330,6 +411,17 @@ class CollaborationState extends _CollaborationConnection {
               ? '$online visible session(s)'
               : 'Presence unavailable · text chat still works',
           style: const TextStyle(fontSize: 11, color: Colors.black54),
+        ),
+        TextButton.icon(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (_) => NotificationInbox(
+              request: request,
+              admin: auth.account?.admin ?? false,
+            ),
+          ),
+          icon: const Icon(Icons.notifications_outlined),
+          label: const Text('Notifications'),
         ),
         ListenableBuilder(
           listenable: chatController ?? queueNotifier,

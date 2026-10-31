@@ -1,28 +1,20 @@
 # Seeded NVIAI company and accounts
 
-A normal office-node startup now sets up **NVIAI Smart Technology** and creates missing accounts for all 11 seeded human members. Open the app and choose **Sign in** directly. No setup code, invitation or mandatory password change is needed.
+A normal office-node startup now sets up **NVIAI Smart Technology** and creates missing accounts for the three active human members. Open the app and choose **Sign in** directly. No setup code, invitation or mandatory password change is needed.
 
 Default password for every newly seeded account:
 
 ```text
-NviaiSeaxOpenAIHackathon
+Nviai#123
 ```
 
 | Username | Person | Role |
 | --- | --- | --- |
-| `an` | Nguyen Van An | Company Administrator |
-| `thao` | Do Phuong Thao | Product Manager |
-| `hung` | Vu Manh Hung | Software Engineer |
-| `tuan` | Tran Anh Tuan | Software Engineer |
-| `linh` | Pham Khanh Linh | QA Engineer |
-| `mai` | Le Thi Mai | Sales |
-| `duc` | Hoang Minh Duc | Customer Support |
-| `van` | Ngo Thu Van | Accountant |
 | `pha.le` | Pha Le | CEO + Company Administrator |
 | `hao.hua` | Hao Hua | CTO + Company Administrator |
 | `triet.le` | Triet Le | Company Administrator |
 
-Each password is stored as a separate salted Argon2id hash in `accounts.password_hash`. Agents have no password accounts. Existing company identity, account credentials, usernames and disabled states are preserved. Existing seeded usernames `le-pha`, `hua-hao` (or `hao-hua`) and `le-triet` are migrated to `pha.le`, `hao.hua` and `triet.le` at master startup, preserving passwords and actor IDs.
+Each password is stored as a separate salted Argon2id hash in `accounts.password_hash`. Agents have no password accounts. The one-time `demo-three-accounts-v1` migration resets these three demo passwords, archives other human accounts and revokes existing sessions. Historical records and agents are preserved. Later restarts preserve password changes. Existing seeded usernames `le-pha`, `hua-hao` (or `hao-hua`) and `le-triet` are migrated to `pha.le`, `hao.hua` and `triet.le` at master startup, preserving passwords and actor IDs.
 
 The one-time `demo-company-accounts-v1` marker prevents account recreation/reset on later restarts. Deleting the SQLite database and starting with a fresh one seeds everything again.
 

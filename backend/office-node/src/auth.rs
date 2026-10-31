@@ -85,7 +85,10 @@ pub fn seed_company(db: &mut Connection, seed: &Value) -> Result<bool, Box<dyn s
         audit(&tx, "seed", &authority, "workspace_seeded")?;
     }
     for person in seed["actors"].as_array().ok_or("missing actors")? {
-        if person["kind"] != "human" {
+        if person["kind"] != "human"
+            || !["le-pha", "hua-hao", "le-triet"]
+                .contains(&person["id"].as_str().unwrap_or_default())
+        {
             continue;
         }
         let id = person["id"].as_str().ok_or("missing actor id")?;
@@ -98,7 +101,7 @@ pub fn seed_company(db: &mut Connection, seed: &Value) -> Result<bool, Box<dyn s
             continue;
         }
         let username = person["username"].as_str().unwrap_or(id);
-        let password_hash = hash_password("NviaiSeaxOpenAIHackathon");
+        let password_hash = hash_password("Nviai#123");
         tx.execute(
             "INSERT INTO accounts(actor,username,password_hash,created) VALUES (?1,?2,?3,?4)",
             params![id, username, password_hash, now()],
@@ -132,6 +135,49 @@ pub fn migrate_seed_usernames(db: &mut Connection) -> rusqlite::Result<()> {
         }
     }
     set_meta(&tx, "seed-login-names-v2", "applied")?;
+    tx.commit()
+}
+
+/// One-time demo roster cleanup. Keep historical actor references intact.
+pub fn migrate_demo_roster(db: &mut Connection) -> rusqlite::Result<()> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if role(&tx)? != Some(Role::Master)
+        || meta(&tx, "demo-company-accounts-v1")?.is_none()
+        || meta(&tx, "demo-three-accounts-v1")?.is_some()
+    {
+        return Ok(());
+    }
+    let humans: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT id FROM actors WHERE kind='human'")?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for id in humans {
+        if ["le-pha", "hua-hao", "le-triet"].contains(&id.as_str()) {
+            tx.execute("UPDATE accounts SET password_hash=?2,disabled=0,failures=0,locked_until=0 WHERE actor=?1", params![id, hash_password("Nviai#123")])?;
+        } else {
+            tx.execute(
+                "INSERT INTO accounts(actor,username,created,disabled) VALUES (?1,?1,?2,1) ON CONFLICT(actor) DO UPDATE SET disabled=1,password_hash=NULL",
+                params![id, now()],
+            )?;
+            set_meta(&tx, &format!("archived-person:{id}"), "true")?;
+            tx.execute("DELETE FROM actor_roles WHERE actor=?1", [&id])?;
+            tx.execute("DELETE FROM room_members WHERE actor=?1", [&id])?;
+            tx.execute("DELETE FROM project_members WHERE actor=?1", [&id])?;
+        }
+        tx.execute("UPDATE sessions SET revoked=1,revoked_at=?2,revoked_reason='demo_roster_updated' WHERE actor=?1", params![id, now()])?;
+        tx.execute("DELETE FROM tokens WHERE actor=?1", [&id])?;
+        tx.execute("DELETE FROM presence WHERE actor=?1", [&id])?;
+        tx.execute(
+            "UPDATE invites SET used=?2 WHERE actor=?1 AND used IS NULL",
+            params![id, now()],
+        )?;
+        audit(&tx, "seed", &id, "demo_roster_updated")?;
+    }
+    bump_realtime_epoch(&tx)?;
+    set_meta(&tx, "demo-three-accounts-v1", "applied")?;
     tx.commit()
 }
 
@@ -1120,7 +1166,7 @@ pub async fn people(State(state): State<Db>, headers: HeaderMap) -> Result<Json<
                     (SELECT COUNT(*) FROM sessions s WHERE s.actor=a.id AND s.revoked=0 AND s.refresh_expires>?1),
                     EXISTS(SELECT 1 FROM invites i WHERE i.actor=a.id AND i.used IS NULL AND i.expires>?1),
                     EXISTS(SELECT 1 FROM actor_roles r WHERE r.actor=a.id AND r.role='org-admin')
-             FROM actors a LEFT JOIN accounts c ON c.actor=a.id WHERE a.kind='human' ORDER BY a.name",
+             FROM actors a LEFT JOIN accounts c ON c.actor=a.id WHERE a.kind='human' AND NOT EXISTS (SELECT 1 FROM metadata m WHERE m.key='archived-person:' || a.id) ORDER BY a.name",
         )
         .map_err(db_error)?;
     let people = stmt

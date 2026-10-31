@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -174,7 +176,7 @@ class _SupportCasesState extends ConsumerState<SupportCases> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 800,
       height: 600,
@@ -288,6 +290,7 @@ class _SupportCaseFormState extends State<_SupportCaseForm> {
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: customer,
             decoration: const InputDecoration(labelText: 'Customer'),
             items: widget.customers

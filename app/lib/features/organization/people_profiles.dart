@@ -9,10 +9,12 @@ class PeopleProfiles extends StatelessWidget {
     required this.remote,
     required this.connectedActor,
     this.onChatAgent,
+    this.shrinkWrap = false,
   });
   final List<Map<String, dynamic>> actors;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
   final String? connectedActor;
+  final bool shrinkWrap;
   final void Function(String)? onChatAgent;
 
   @override
@@ -21,6 +23,8 @@ class PeopleProfiles extends StatelessWidget {
   ) => ValueListenableBuilder<List<Map<String, dynamic>>>(
     valueListenable: remote,
     builder: (context, presence, _) => ListView(
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       children: actors.map((actor) {
         final isAgent = actor['kind'] == 'agent';
         final visible = presence.any((entry) => entry['actor'] == actor['id']);
@@ -33,21 +37,45 @@ class PeopleProfiles extends StatelessWidget {
             : visible
             ? '${actorRoleLabel(actor['role'])} · visible in office'
             : '${actorRoleLabel(actor['role'])} · not currently visible';
-        return Material(
-          color: Colors.transparent,
+        return Card(
+          elevation: 0,
+          color: isAgent ? const Color(0xfff1f3e9) : const Color(0xfffcfbf7),
+          margin: const EdgeInsets.only(bottom: 7),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xffe2e7dc)),
+          ),
           child: ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 3,
+            ),
             leading: CircleAvatar(
+              radius: 17,
               backgroundColor: isAgent
                   ? const Color(0xffe5d8c9)
                   : const Color(0xffd9e7da),
               child: Text((actor['name'] as String).substring(0, 1)),
             ),
             title: Text(
-              actor['name'] as String,
+              actorDisplayName(actor),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
-            subtitle: Text(status, style: const TextStyle(fontSize: 11)),
+            subtitle: Text(
+              status,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10,
+                height: 1.4,
+                color: Color(0xff526358),
+              ),
+            ),
+            trailing: isAgent
+                ? const Icon(Icons.chat_bubble_outline, size: 15)
+                : visible || actor['id'] == connectedActor
+                ? const Icon(Icons.circle, size: 7, color: Color(0xff4d8063))
+                : null,
             onTap: () =>
                 showActorProfile(context, actor, onChatAgent: onChatAgent),
           ),
@@ -67,7 +95,7 @@ Future<void> showActorProfile(
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(actor['name'] as String),
+      title: Text(actorDisplayName(actor)),
       content: Text(
         '${actor['kind']} · ${actorRoleLabel(actor['role'])}\n${isAgent ? 'Chat with this agent through OpenAI.' : 'Presence is filtered by room access; absence does not imply offline.'}',
       ),

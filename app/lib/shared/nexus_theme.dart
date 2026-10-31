@@ -135,9 +135,7 @@ class NexusTheme extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Theme(
-    data: nexusThemeData(
-      NexusTokens.of(MediaQuery.platformBrightnessOf(context)),
-    ),
+    data: nexusThemeData(NexusTokens.of(Theme.of(context).brightness)),
     child: child,
   );
 }

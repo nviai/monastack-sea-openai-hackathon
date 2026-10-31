@@ -1,3 +1,6 @@
+import 'package:monastack/shared/actor_role.dart';
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,7 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import 'package:monastack/shared/node_request.dart';
 
-/// Stores proposals only. No job execution is implemented.
+/// Assignment proposals and human review of configured host results.
 class JobQueue extends ConsumerStatefulWidget {
   const JobQueue({
     super.key,
@@ -99,7 +102,7 @@ class _JobQueueState extends ConsumerState<JobQueue> {
     try {
       await widget.request(
         'POST',
-        '/v1/jobs/${Uri.encodeComponent(job['id'] as String)}/decision',
+        '/v1/jobs/${Uri.encodeComponent(job['id'] as String)}/${action == 'accept' || action == 'reject' ? 'review' : 'decision'}',
         {'action': action, 'expected_version': job['version'], 'op': uuid.v4()},
       );
       await load();
@@ -145,7 +148,7 @@ class _JobQueueState extends ConsumerState<JobQueue> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 700,
       height: 650,
@@ -175,7 +178,7 @@ class _JobQueueState extends ConsumerState<JobQueue> {
               ],
             ),
             const Text(
-              'Approval records a decision; nothing runs until an explicitly configured host acts. Unlinked proposals are workspace-visible; linked proposals follow project access.',
+              'A configured worker starts approved work. New assignments get a private ticket; linked assignments follow project access. Review results before completing tickets.',
               style: TextStyle(color: Colors.black54),
             ),
             if (widget.linkedTaskId != null)
@@ -185,13 +188,18 @@ class _JobQueueState extends ConsumerState<JobQueue> {
             if (error != null)
               Text(error!, style: const TextStyle(color: Colors.red)),
             DropdownButton<String>(
+              isExpanded: true,
               value: agent,
               items: widget.actors
                   .where((a) => a['kind'] == 'agent')
                   .map(
                     (a) => DropdownMenuItem(
                       value: a['id'] as String,
-                      child: Text('${a['name']} · offline'),
+                      child: Text(
+                        actorDisplayName(a),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -245,6 +253,16 @@ class _JobQueueState extends ConsumerState<JobQueue> {
                             onPressed: () => history(job),
                             child: const Text('History'),
                           ),
+                          if (state == 'host_reported') ...[
+                            TextButton(
+                              onPressed: () => decide(job, 'accept'),
+                              child: const Text('Accept result'),
+                            ),
+                            TextButton(
+                              onPressed: () => decide(job, 'reject'),
+                              child: const Text('Reject result'),
+                            ),
+                          ],
                           if (state == 'proposed')
                             TextButton(
                               onPressed: () => decide(job, 'approve'),
@@ -252,7 +270,8 @@ class _JobQueueState extends ConsumerState<JobQueue> {
                             ),
                           if (state == 'proposed' ||
                               state == 'approved_waiting' ||
-                              state == 'host_claimed')
+                              state == 'host_claimed' ||
+                              state == 'waiting_input')
                             TextButton(
                               onPressed: () => decide(job, 'cancel'),
                               child: const Text('Cancel'),

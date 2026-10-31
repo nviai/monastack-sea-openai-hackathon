@@ -13,7 +13,7 @@ import urllib.request
 root = Path(__file__).resolve().parents[3]
 binary = root / 'backend/office-node/target/debug/monastack-office-node'
 seed = json.loads((root/'data/seed/nviai/seed.v1.json').read_text())
-password = 'NviaiSeaxOpenAIHackathon'
+password = 'Nviai#123'
 with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
     db = Path(directory)/'office.sqlite3'
     env_file = Path(directory)/'.env'
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
         assert state['workspace']['name'] == seed['workspace']['name']
         sessions = {}
         for person in seed['actors']:
-            if person['kind'] != 'human':
+            if person['kind'] != 'human' or person['id'] not in ('le-pha', 'hua-hao', 'le-triet'):
                 continue
             status, session = login(person.get('username', person['id']))
             assert status == 200, (person['id'], status)
@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
             assert call('me', token=session['access_token'])[0] == 200
             sessions[person['id']] = session
         assert call('agents/appearances')[0] == 401
-        status, appearances = call('agents/appearances', token=sessions['hung']['access_token'])
+        status, appearances = call('agents/appearances', token=sessions['le-pha']['access_token'])
         assert status == 200 and len(appearances) == 6
         assert {a['id'] for a in appearances} == {a['id'] for a in seed['actors'] if a['kind'] == 'agent'}
         assert all(set(a) == {'id', 'name', 'gender', 'voice'} for a in appearances)
@@ -77,10 +77,13 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
             assert len(settings['agents']) == 6
             assert all(a['version'] >= 1 and a['config']['gender'] in ('male', 'female') for a in settings['agents'])
         with sqlite3.connect(db) as connection:
-            hashes = dict(connection.execute('SELECT actor,password_hash FROM accounts'))
-        assert len(hashes) == 11 and len(set(hashes.values())) == 11
+            hashes = dict(connection.execute('SELECT actor,password_hash FROM accounts WHERE disabled=0'))
+        assert len(hashes) == 3 and len(set(hashes.values())) == 3
         assert all(value.startswith('$argon2id$') and password not in value for value in hashes.values())
         assert login('mona')[0] == 401
+        for username in ('an','thao','hung','tuan','linh','mai','duc','van'):
+            assert login(username)[0] in (401,403)
+        assert len(call('admin/people', token=sessions['le-pha']['access_token'])[1]['people']) == 3
         changed = 'A changed password for testing'
         assert call('auth/password', {'current': password, 'new': changed}, sessions['le-triet']['access_token'])[0] == 204
         stop()
@@ -98,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
         assert login('triet.le', changed)[0] == 200
         assert login('triet.le')[0] == 401
         with sqlite3.connect(db) as connection:
-            assert connection.execute("SELECT password_hash FROM accounts WHERE actor='an'").fetchone()[0] == hashes['an']
+            assert connection.execute("SELECT password_hash FROM accounts WHERE actor='an'").fetchone()[0] is None
         stop()
         # A fresh member candidate/manual setup keeps the original setup flow.
         env['MONASTACK_DB'] = str(Path(directory)/'manual.sqlite3')
@@ -117,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
         assert state['role'] == 'member'
         with sqlite3.connect(member_db) as connection:
             assert connection.execute('SELECT COUNT(*) FROM accounts').fetchone()[0] == 0
-        print('Seed company: 11 real logins, admin roles, salted hashes, restart/password preservation, opt-out and member checks passed.')
+        print('Seed company: 3 real logins, admin roles, salted hashes, restart/password preservation, opt-out and member checks passed.')
     finally:
         if node is not None and node.poll() is None:
             stop()

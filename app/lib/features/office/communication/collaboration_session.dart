@@ -3,6 +3,7 @@ part of 'collaboration.dart';
 abstract class _CollaborationSession extends State<Collaboration> {
   Future<void> connect();
   Future<void> refresh();
+  Future<void> syncUiActions();
 
   final token = TextEditingController();
   late final AuthSession auth = AuthSession(
@@ -134,6 +135,7 @@ abstract class _CollaborationSession extends State<Collaboration> {
   /// movement; a failure only affects presence, never chat.
   Future<void> refreshPresence() async {
     unawaited(refreshAgentAppearances());
+    unawaited(syncUiActions());
     final presence = realtime;
     if (identity == null || presence == null || presenceBusy || disconnecting) {
       return;

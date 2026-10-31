@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -94,7 +96,7 @@ class _CustomerDirectoryState extends ConsumerState<CustomerDirectory> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 700,
       height: 600,

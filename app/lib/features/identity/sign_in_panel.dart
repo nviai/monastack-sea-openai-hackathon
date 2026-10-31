@@ -184,6 +184,7 @@ class _SignInPanelState extends State<SignInPanel> {
             'Sign in to ${(info['workspace'] as Map?)?['name'] ?? 'your company'}',
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
+          const SizedBox(height: 14),
           AutofillGroup(
             child: Column(
               children: [
@@ -192,9 +193,11 @@ class _SignInPanelState extends State<SignInPanel> {
                   autofillHints: const [AutofillHints.username],
                   decoration: const InputDecoration(
                     labelText: 'Username',
+                    prefixIcon: Icon(Icons.person_outline, size: 19),
                     isDense: true,
                   ),
                 ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: password,
                   obscureText: true,
@@ -202,6 +205,7 @@ class _SignInPanelState extends State<SignInPanel> {
                   onSubmitted: (_) => _signIn(),
                   decoration: const InputDecoration(
                     labelText: 'Password',
+                    prefixIcon: Icon(Icons.lock_outline, size: 19),
                     isDense: true,
                   ),
                 ),
@@ -356,17 +360,26 @@ class _SetupDialogState extends State<SetupDialog> {
               decoration: const InputDecoration(labelText: 'Company name'),
             ),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: person,
               decoration: const InputDecoration(labelText: 'Who are you?'),
               items: [
                 for (final p in widget.people)
                   DropdownMenuItem(
                     value: p['id'] as String,
-                    child: Text(p['name'] as String),
+                    child: Text(
+                      p['name'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 const DropdownMenuItem(
                   value: _someoneNew,
-                  child: Text('Someone new'),
+                  child: Text(
+                    'Someone new',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
               onChanged: (value) => setState(() => person = value),

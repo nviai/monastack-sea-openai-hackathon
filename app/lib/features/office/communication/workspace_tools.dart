@@ -11,7 +11,11 @@ const _groups = <(String, List<_Tool>)>[
       (id: 'chat', label: 'Chat', icon: Icons.forum_outlined),
       (id: 'tasks', label: 'Open task board', icon: Icons.view_kanban_outlined),
       (id: 'agent-chat', label: 'Chat with agents', icon: Icons.chat_outlined),
-      (id: 'agent-configuration', label: 'Agent configuration', icon: Icons.tune),
+      (
+        id: 'agent-configuration',
+        label: 'Agent configuration',
+        icon: Icons.tune,
+      ),
       (id: 'agents', label: 'Agent proposals', icon: Icons.smart_toy_outlined),
       (
         id: 'room-admin',
@@ -109,22 +113,30 @@ class WorkspaceTools extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chatTokens = NexusTokens.of(MediaQuery.platformBrightnessOf(context));
+    final chatTokens = NexusTokens.of(Theme.of(context).brightness);
     return AlertDialog(
       title: const Text('Workspace tools'),
       content: SizedBox(
-        width: 560,
+        width: 740,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Text(
+                'Your projects, people and daily work — all in one place.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: Color(0xff526358),
+                ),
+              ),
               for (final (group, tools) in [
                 if (account)
                   ('Account', [..._accountTools, if (admin) ..._adminTools]),
                 ..._groups,
               ]) ...[
                 Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 6),
+                  padding: const EdgeInsets.only(top: 20, bottom: 10),
                   child: Text(
                     group.toUpperCase(),
                     style: const TextStyle(
@@ -141,13 +153,22 @@ class WorkspaceTools extends StatelessWidget {
                   children: [
                     for (final tool in tools)
                       SizedBox(
-                        width: 176,
+                        width: (MediaQuery.sizeOf(context).width - 128).clamp(
+                          160.0,
+                          235.0,
+                        ),
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             alignment: Alignment.centerLeft,
+                            minimumSize: const Size(0, 72),
+                            backgroundColor: const Color(0xfffcfbf7),
+                            side: const BorderSide(color: Color(0xffdfe5d9)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
+                              horizontal: 16,
+                              vertical: 18,
                             ),
                           ),
                           onPressed: () => Navigator.pop(context, tool.id),
@@ -161,11 +182,22 @@ class WorkspaceTools extends StatelessWidget {
                               weight: NexusTokens.w600,
                               height: 1,
                             ),
-                            child: Icon(tool.icon, size: 18),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xffe7eddf),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(tool.icon, size: 19),
+                            ),
                           ),
                           label: Text(
                             tool.label,
-                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),

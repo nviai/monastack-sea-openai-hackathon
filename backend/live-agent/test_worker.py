@@ -145,10 +145,57 @@ class ActivationConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bridge.muted_timeout(),12)
         self.bridge.settings['max_idle_seconds']=120
         self.assertEqual(self.bridge.idle_timeout(),120)
+    async def test_new_arrival_is_greeted_in_existing_session_once(self):
+        from unittest.mock import AsyncMock, MagicMock
+        connection = MagicMock()
+        connection.session.commentary.append = AsyncMock()
+        self.bridge.connection = connection
+        self.bridge.on_connected_users({'an.123456789012'})
+        await __import__('asyncio').sleep(0)
+        connection.session.commentary.append.assert_awaited_once()
+        self.bridge.on_connected_users({'an.123456789012'})
+        await __import__('asyncio').sleep(0)
+        connection.session.commentary.append.assert_awaited_once()
+
     async def test_departure_cancels_automatic_start_before_provider_session(self):
         self.bridge.on_connected_users({'an.123456789012'})
         self.bridge.on_connected_users(set())
         self.assertFalse(self.bridge.can_start())
+
+class OutputBufferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_large_provider_burst_preserves_every_sample(self):
+        import asyncio
+        from worker import Bridge
+        bridge = object.__new__(Bridge)
+        bridge.output = asyncio.Queue(maxsize=25)
+        bridge.output_epoch = 0
+        pcm = bytes(range(256)) * 300  # 1.6 seconds, larger than output capacity.
+        chunks = []
+        async def consume():
+            while sum(map(len, chunks)) < len(pcm):
+                _, chunk = await bridge.output.get()
+                chunks.append(chunk)
+                await asyncio.sleep(0)
+        await asyncio.wait_for(asyncio.gather(bridge.enqueue_audio(pcm), consume()), 2)
+        self.assertEqual(b''.join(chunks), pcm)
+
+    async def test_interruption_invalidates_blocked_old_audio(self):
+        import asyncio
+        from unittest.mock import MagicMock
+        from worker import Bridge
+        bridge = object.__new__(Bridge)
+        bridge.output = asyncio.Queue(maxsize=1)
+        bridge.output_epoch = 0
+        bridge.source = MagicMock()
+        producer = asyncio.create_task(bridge.enqueue_audio(LOUD * 4))
+        await asyncio.sleep(0)
+        bridge.clear_output()
+        await asyncio.wait_for(producer, 1)
+        while not bridge.output.empty():
+            epoch, _ = bridge.output.get_nowait()
+            self.assertNotEqual(epoch, bridge.output_epoch)
+        bridge.source.clear_queue.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

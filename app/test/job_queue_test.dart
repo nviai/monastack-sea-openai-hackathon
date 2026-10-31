@@ -39,7 +39,7 @@ void main() {
     expect(find.textContaining('Synthetic report'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
   });
-  testWidgets('records a proposal and clearly states there is no host', (
+  testWidgets('records a proposal and explains approved worker execution', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -82,7 +82,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('nothing runs'), findsOneWidget);
+    expect(
+      find.textContaining('A configured worker starts approved work'),
+      findsOneWidget,
+    );
     await tester.enterText(find.byType(TextField), 'Investigate issue');
     await tester.tap(find.text('Propose'));
     await tester.pumpAndSettle();

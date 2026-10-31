@@ -1,3 +1,4 @@
+import 'package:monastack/shared/actor_role.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:monastack/features/sync/task_outbox.dart';
@@ -8,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:monastack/shared/node_request.dart';
 
 /// This board uses the authenticated node; it has no offline queue.
@@ -65,6 +67,7 @@ class _TaskBoardState extends ConsumerState<TaskBoard> {
       if (!mounted) return;
       setState(() {
         projects = result;
+        selected ??= projects.isEmpty ? null : projects.first['id'] as String;
         if (selected != null && !projects.any((p) => p['id'] == selected)) {
           selected = null;
           tasks = [];
@@ -194,9 +197,7 @@ class _TaskBoardState extends ConsumerState<TaskBoard> {
           ...widget.actors.map(
             (a) => SimpleDialogOption(
               onPressed: () => Navigator.pop(context, a['id'] as String),
-              child: Text(
-                '${a['name']}${a['kind'] == 'agent' ? ' · offline agent' : ''}',
-              ),
+              child: Text(actorDisplayName(a)),
             ),
           ),
         ],
@@ -241,9 +242,7 @@ class _TaskBoardState extends ConsumerState<TaskBoard> {
           ...widget.actors.map(
             (a) => SimpleDialogOption(
               onPressed: () => Navigator.pop(context, a['id'] as String),
-              child: Text(
-                '${a['name']}${a['kind'] == 'agent' ? ' · offline agent' : ''}',
-              ),
+              child: Text(actorDisplayName(a)),
             ),
           ),
         ],
@@ -395,288 +394,567 @@ class _TaskBoardState extends ConsumerState<TaskBoard> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Dialog(
-    child: SizedBox(
-      width: 950,
-      height: 650,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Tasks',
-                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(
-                  onPressed: loadProjects,
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close),
-                ),
-              ],
+  String search = '';
+  String actorName(dynamic id) {
+    for (final actor in widget.actors) {
+      if (actor['id'] == id) return actorDisplayName(actor);
+    }
+    return id?.toString() ?? 'Unassigned';
+  }
+
+  Widget projectCard(Map p, int index) {
+    final active = selected == p['id'];
+    index = {'Meslingo': 0, 'VibeKOL': 1, 'OmitX': 2}[p['name']] ?? index;
+    final colors = [
+      const Color(0xff46635a),
+      const Color(0xff9a6947),
+      const Color(0xff527381),
+    ];
+    final color = colors[index % colors.length];
+    final total = (p['task_count'] as num?)?.toInt() ?? 0;
+    final done = (p['done_count'] as num?)?.toInt() ?? 0;
+    return SizedBox(
+      width: 270,
+      child: Semantics(
+        selected: active,
+        child: Card(
+          elevation: 0,
+          color: active ? const Color(0xffe6edde) : const Color(0xfffcfbf7),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(
+              color: active ? color : const Color(0xffdfe4d8),
+              width: active ? 1.5 : 1,
             ),
-            const Text(
-              'Workspace-wide prototype · online only · assigning an agent does not start it',
-              style: TextStyle(color: Colors.black54),
-            ),
-            if (widget.queue != null)
-              ValueListenableBuilder<List<Map<String, dynamic>>>(
-                valueListenable: widget.queue!,
-                builder: (context, entries, _) => entries.isEmpty
-                    ? const SizedBox.shrink()
-                    : TextButton(
-                        onPressed: widget.reviewQueue,
-                        child: Text(
-                          'Review ${entries.length} pending or rejected task change(s)',
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: ValueKey('project-${p['id']}'),
+            onTap: () {
+              setState(() {
+                selected = p['id'] as String;
+                tasks = [];
+              });
+              loadTasks();
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          [
+                            Icons.school_outlined,
+                            Icons.auto_awesome_outlined,
+                            Icons.laptop_mac_outlined,
+                          ][index % 3],
+                          color: color,
+                          size: 21,
                         ),
                       ),
-              ),
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(error!, style: const TextStyle(color: Colors.red)),
-              ),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String>(
-                    key: const ValueKey('project-picker'),
-                    isExpanded: true,
-                    value: selected,
-                    hint: const Text('Choose a project'),
-                    items: projects
-                        .map(
-                          (p) => DropdownMenuItem(
-                            value: p['id'] as String,
-                            child: Text(
-                              '${p['name']}${p['private'] == true ? ' · private' : ''}',
-                            ),
+                      const Spacer(),
+                      if (p['demo'] == true)
+                        const Text(
+                          'DEMO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 1.4,
+                            color: Color(0xff62756b),
                           ),
-                        )
-                        .toList(),
-                    onChanged: (id) {
-                      setState(() {
-                        selected = id;
-                        tasks = [];
-                      });
-                      loadTasks();
-                    },
+                        ),
+                      if (p['private'] == true)
+                        const Icon(Icons.lock_outline, size: 15),
+                      if (active)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Icon(
+                            Icons.check_circle,
+                            color: color,
+                            size: 18,
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: createProject,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Project'),
-                ),
-                if (selected != null &&
-                    projects.any(
-                      (p) => p['id'] == selected && p['private'] == true,
-                    ))
-                  TextButton.icon(
-                    onPressed: () => showDialog<void>(
-                      context: context,
-                      builder: (context) => _ProjectMembers(
-                        project: selected!,
-                        request: widget.request,
-                        actors: widget.actors,
+                  const SizedBox(height: 10),
+                  Text(
+                    p['name'] as String,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xff253d38),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    (p['description'] as String?)?.isNotEmpty == true
+                        ? p['description'] as String
+                        : p['private'] == true
+                        ? 'Private project'
+                        : 'Workspace project',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xff62756b),
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Text(
+                        '$total tasks',
+                        style: const TextStyle(fontSize: 11),
                       ),
-                    ),
-                    icon: const Icon(Icons.group_outlined),
-                    label: const Text('Members'),
+                      const Spacer(),
+                      Text(
+                        '$done completed',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ],
                   ),
-                if (selected != null && canEdit)
-                  TextButton.icon(
-                    onPressed: createTask,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Task'),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: total == 0 ? 0 : done / total,
+                    color: color,
+                    backgroundColor: color.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(8),
+                    minHeight: 4,
                   ),
-              ],
+                ],
+              ),
             ),
-            if (loading) const LinearProgressIndicator(),
-            Expanded(
-              child: selected == null
-                  ? const Center(child: Text('Create or choose a project.'))
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final state in ['todo', 'in_progress', 'done'])
-                          Expanded(
-                            child: Container(
-                              margin: const EdgeInsets.all(5),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xfff0f2ed),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    {
-                                      'todo': 'To do',
-                                      'in_progress': 'In progress',
-                                      'done': 'Done',
-                                    }[state]!,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Expanded(
-                                    child: ListView(
-                                      children: tasks.where((t) => t['state'] == state).map((
-                                        t,
-                                      ) {
-                                        final task = t as Map<String, dynamic>;
-                                        return Card(
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(10),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  task['title'] as String,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  task['assignee'] == null
-                                                      ? 'Unassigned'
-                                                      : 'Assigned: ${task['assignee']}',
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                                Wrap(
-                                                  children: [
-                                                    if (canEdit)
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            changeAssignee(
-                                                              task,
-                                                            ),
-                                                        child: const Text(
-                                                          'Assign',
-                                                        ),
-                                                      ),
-                                                    if (canEdit)
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            showDialog<void>(
-                                                              context: context,
-                                                              builder: (_) => JobQueue(
-                                                                request: widget
-                                                                    .request,
-                                                                actors: widget
-                                                                    .actors,
-                                                                linkedTaskId:
-                                                                    task['id']
-                                                                        as String,
-                                                                linkedTaskTitle:
-                                                                    task['title']
-                                                                        as String,
-                                                              ),
-                                                            ),
-                                                        child: const Text(
-                                                          'Agent proposal',
-                                                        ),
-                                                      ),
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          comments(task),
-                                                      child: const Text(
-                                                        'Comments',
-                                                      ),
-                                                    ),
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          history(task),
-                                                      child: const Text(
-                                                        'History',
-                                                      ),
-                                                    ),
-                                                    if (canEdit &&
-                                                        state == 'todo')
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            transition(
-                                                              task,
-                                                              'in_progress',
-                                                            ),
-                                                        child: const Text(
-                                                          'Start',
-                                                        ),
-                                                      ),
-                                                    if (canEdit &&
-                                                        state ==
-                                                            'in_progress') ...[
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            transition(
-                                                              task,
-                                                              'todo',
-                                                            ),
-                                                        child: const Text(
-                                                          'Reopen',
-                                                        ),
-                                                      ),
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            transition(
-                                                              task,
-                                                              'done',
-                                                            ),
-                                                        child: const Text(
-                                                          'Done',
-                                                        ),
-                                                      ),
-                                                    ],
-                                                    if (canEdit &&
-                                                        state == 'done')
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            transition(
-                                                              task,
-                                                              'in_progress',
-                                                            ),
-                                                        child: const Text(
-                                                          'Reopen',
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget taskCard(Map<String, dynamic> task, String state) => Card(
+    elevation: 0,
+    color: const Color(0xfffcfbf7),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: const BorderSide(color: Color(0xffe1e5da)),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            task['title'] as String,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1.45,
+              color: Color(0xff253d38),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 13,
+                backgroundColor: const Color(0xffe5ecdf),
+                child: Text(
+                  actorName(task['assignee']).substring(0, 1).toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xff46635a),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  actorName(task['assignee']),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xff62756b),
+                  ),
+                ),
+              ),
+              if (canEdit)
+                IconButton(
+                  tooltip: 'Assign',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.person_add_alt, size: 17),
+                  onPressed: () => changeAssignee(task),
+                ),
+            ],
+          ),
+          const Divider(height: 20),
+          Wrap(
+            spacing: 2,
+            runSpacing: 2,
+            children: [
+              TextButton(
+                onPressed: () => comments(task),
+                child: const Text('Comments'),
+              ),
+              TextButton(
+                onPressed: () => history(task),
+                child: const Text('History'),
+              ),
+              if (canEdit)
+                TextButton(
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => JobQueue(
+                      request: widget.request,
+                      actors: widget.actors,
+                      linkedTaskId: task['id'] as String,
+                      linkedTaskTitle: task['title'] as String,
+                    ),
+                  ),
+                  child: const Text('Agent proposal'),
+                ),
+              if (canEdit && state == 'todo')
+                TextButton(
+                  onPressed: () => transition(task, 'in_progress'),
+                  child: const Text('Start'),
+                ),
+              if (canEdit && state == 'in_progress') ...[
+                TextButton(
+                  onPressed: () => transition(task, 'todo'),
+                  child: const Text('Reopen'),
+                ),
+                TextButton(
+                  onPressed: () => transition(task, 'done'),
+                  child: const Text('Done'),
+                ),
+              ],
+              if (canEdit && state == 'done')
+                TextButton(
+                  onPressed: () => transition(task, 'in_progress'),
+                  child: const Text('Reopen'),
+                ),
+            ],
+          ),
+        ],
       ),
     ),
   );
+
+  Widget lane(String state) {
+    final visible = tasks
+        .where(
+          (t) =>
+              t['state'] == state &&
+              ('${t['title']} ${actorName(t['assignee'])}')
+                  .toLowerCase()
+                  .contains(search.toLowerCase()),
+        )
+        .toList();
+    final color = {
+      'todo': const Color(0xff829086),
+      'in_progress': const Color(0xffb48041),
+      'done': const Color(0xff4d8063),
+    }[state]!;
+    return Container(
+      width: 320,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xffedf0e7),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+            child: Row(
+              children: [
+                Icon(Icons.circle, size: 9, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  {
+                    'todo': 'To do',
+                    'in_progress': 'In progress',
+                    'done': 'Done',
+                  }[state]!,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .7),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    '${visible.length}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: visible.isEmpty
+                ? Center(
+                    child: Text(
+                      search.isEmpty ? 'Nothing here yet' : 'No matching tasks',
+                      style: const TextStyle(
+                        color: Color(0xff62756b),
+                        fontSize: 12,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: visible.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 7),
+                    itemBuilder: (_, i) =>
+                        taskCard(visible[i] as Map<String, dynamic>, state),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final project = projects.where((p) => p['id'] == selected).firstOrNull;
+    return Dialog(
+      backgroundColor: const Color(0xfff7f5ef),
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SizedBox(
+        width: 1240,
+        height: 850,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'WORKSPACE / PROJECTS',
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 1.8,
+                            color: Color(0xff62756b),
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Make room for great work.',
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xff253d38),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: createProject,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Project'),
+                  ),
+                  IconButton(
+                    onPressed: loadProjects,
+                    tooltip: 'Refresh',
+                    icon: const Icon(Icons.refresh, size: 20),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 186,
+                child: projects.isEmpty
+                    ? const Center(
+                        child: Text('Create a project to get started.'),
+                      )
+                    : ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: projects.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) =>
+                            projectCard(projects[i] as Map, i),
+                      ),
+              ),
+              if (widget.queue != null)
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: widget.queue!,
+                  builder: (_, entries, _) => entries.isEmpty
+                      ? const SizedBox.shrink()
+                      : TextButton(
+                          onPressed: widget.reviewQueue,
+                          child: Text(
+                            'Review ${entries.length} pending or rejected task change(s)',
+                          ),
+                        ),
+                ),
+              if (error != null)
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    project?['name'] as String? ?? 'Select a project',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xff253d38),
+                    ),
+                  ),
+                  if (project?['demo'] == true)
+                    const Text(
+                      'Demo tasks',
+                      style: TextStyle(fontSize: 11, color: Color(0xff62756b)),
+                    ),
+                  if ((project?['url'] as String? ?? '').isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () async {
+                        final uri = Uri.tryParse(project['url'] as String);
+                        if (uri == null ||
+                            !['https', 'http'].contains(uri.scheme)) {
+                          return;
+                        }
+                        try {
+                          if (!await launchUrl(uri) && mounted) {
+                            setState(
+                              () => error = 'Could not open project website.',
+                            );
+                          }
+                        } catch (_) {
+                          if (mounted) {
+                            setState(
+                              () => error = 'Could not open project website.',
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.open_in_new, size: 14),
+                      label: Text(Uri.parse(project['url'] as String).host),
+                    ),
+                  if (project?['private'] == true)
+                    TextButton.icon(
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => _ProjectMembers(
+                          project: selected!,
+                          request: widget.request,
+                          actors: widget.actors,
+                        ),
+                      ),
+                      icon: const Icon(Icons.group_outlined, size: 17),
+                      label: const Text('Members'),
+                    ),
+                  if (selected != null && canEdit)
+                    FilledButton.icon(
+                      onPressed: createTask,
+                      icon: const Icon(Icons.add, size: 17),
+                      label: const Text('Task'),
+                    ),
+                  SizedBox(
+                    width: 200,
+                    child: TextField(
+                      onChanged: (v) => setState(() => search = v),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Search tasks or people',
+                        prefixIcon: Icon(Icons.search, size: 18),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 2,
+                child: loading ? const LinearProgressIndicator() : null,
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: selected == null
+                    ? const Center(
+                        child: Text(
+                          'Choose a project card to explore its board.',
+                        ),
+                      )
+                    : LayoutBuilder(
+                        builder: (_, constraints) {
+                          if (constraints.maxWidth < 900) {
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  for (final state in [
+                                    'todo',
+                                    'in_progress',
+                                    'done',
+                                  ])
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 12),
+                                      child: lane(state),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final state in [
+                                'todo',
+                                'in_progress',
+                                'done',
+                              ])
+                                Expanded(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      right: state == 'done' ? 0 : 12,
+                                    ),
+                                    child: lane(state),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _TextPrompt extends StatefulWidget {
@@ -839,7 +1117,7 @@ class _ProjectMembersState extends State<_ProjectMembers> {
                   final active = members.contains(id);
                   return ListTile(
                     key: ValueKey('member-$id'),
-                    title: Text(a['name'] as String),
+                    title: Text(actorDisplayName(a)),
                     subtitle: Text(
                       owner
                           ? 'Owner'

@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -227,7 +229,7 @@ class _PaymentAuthorizationsState extends ConsumerState<PaymentAuthorizations> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 780,
       height: 600,
@@ -344,6 +346,7 @@ class _PaymentFormState extends State<_PaymentForm> {
     content: SizedBox(
       width: 440,
       child: DropdownButtonFormField<String>(
+        isExpanded: true,
         initialValue: selected,
         decoration: const InputDecoration(labelText: 'Approved expense'),
         items: widget.expenses

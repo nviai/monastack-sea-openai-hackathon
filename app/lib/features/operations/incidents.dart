@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -166,7 +168,7 @@ class _IncidentsState extends ConsumerState<Incidents> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 760,
       height: 600,
@@ -447,14 +449,21 @@ class _ReportFormState extends State<_ReportForm> {
             decoration: const InputDecoration(labelText: 'Description'),
           ),
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: severity,
             decoration: const InputDecoration(labelText: 'Severity'),
-            items: [
-              'low',
-              'medium',
-              'high',
-              'critical',
-            ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            items: ['low', 'medium', 'high', 'critical']
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(
+                      s,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
             onChanged: (s) => setState(() => severity = s ?? 'medium'),
           ),
           if (error != null)

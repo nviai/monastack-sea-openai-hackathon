@@ -1,3 +1,4 @@
+import 'package:monastack/shared/actor_role.dart';
 import 'package:monastack/features/office/world/agent_speech_layer.dart';
 import 'package:flutter/material.dart';
 import 'package:monastack/shared/node_request.dart';
@@ -40,7 +41,7 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
     selected = id;
     version = row['version'] as int;
     config = Map<String, dynamic>.from(row['config'] as Map);
-    config['activation_mode'] ??= 'voice';
+    config['activation_mode'] ??= 'automatic';
     config['muted_idle_seconds'] ??= 5;
     config['tools'] = List<String>.from(config['tools'] as List? ?? []);
     config['actions'] = List<String>.from(config['actions'] as List? ?? []);
@@ -118,6 +119,7 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
     List<String> values, {
     void Function(String)? after,
   }) => DropdownButtonFormField<String>(
+    isExpanded: true,
     key: ValueKey('$selected-$field-${config[field]}'),
     initialValue: values.contains(config[field])
         ? config[field] as String
@@ -125,7 +127,10 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
     decoration: InputDecoration(labelText: label),
     items: [
       for (final value in values)
-        DropdownMenuItem(value: value, child: Text(value)),
+        DropdownMenuItem(
+          value: value,
+          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
     ],
     onChanged: !manage || busy
         ? null
@@ -155,13 +160,21 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: selected,
                     decoration: const InputDecoration(labelText: 'Agent'),
                     items: [
                       for (final a in agents)
                         DropdownMenuItem(
                           value: a['id'] as String,
-                          child: Text(a['config']['display_name'] as String),
+                          child: Text(
+                            agentDisplayName(
+                              a['id'],
+                              a['config']['display_name'],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                     onChanged: busy
@@ -288,6 +301,7 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       key: ValueKey(
                         '$selected-activation-${config['activation_mode']}',
                       ),
@@ -298,11 +312,19 @@ class _AgentConfigurationState extends State<AgentConfiguration> {
                       items: const [
                         DropdownMenuItem(
                           value: 'voice',
-                          child: Text('Wait for voice · mic on + speech'),
+                          child: Text(
+                            'Wait for voice · mic on + speech',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'automatic',
-                          child: Text('Automatic on room entry'),
+                          child: Text(
+                            'Automatic on room entry',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                       onChanged: busy

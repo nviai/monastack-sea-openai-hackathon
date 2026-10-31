@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -193,7 +195,7 @@ class _BookingsState extends ConsumerState<Bookings> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 760,
       height: 600,
@@ -331,6 +333,7 @@ class _BookingFormState extends State<_BookingForm> {
             Text('Customer: ${widget.existing!['customer_name']}')
           else
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: customer,
               decoration: const InputDecoration(labelText: 'Customer'),
               items: widget.customers

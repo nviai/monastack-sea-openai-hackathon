@@ -114,6 +114,7 @@ pub struct Lease {
     instruction: String,
     agent: String,
     task: Option<String>,
+    context: serde_json::Value,
 }
 pub async fn claim(
     State(state): State<Db>,
@@ -159,6 +160,7 @@ pub async fn claim(
             return Err(err(StatusCode::CONFLICT, "claim unavailable"));
         }
         return Ok(Json(Lease {
+            context: super::workflow::context(&tx, &input.job)?,
             job: input.job,
             fence,
             deadline,
@@ -183,8 +185,10 @@ pub async fn claim(
     )
     .map_err(db_error)?;
     job_audit(&tx, &h.sponsor, &input.job, &format!("host_claim:{}", h.id))?;
+    let context = super::workflow::context(&tx, &input.job)?;
     tx.commit().map_err(db_error)?;
     Ok(Json(Lease {
+        context,
         job: input.job,
         fence,
         deadline,
@@ -285,6 +289,136 @@ pub async fn report(
         &job,
         &format!("host_report:{}:{}", h.id, input.outcome),
     )?;
+    let linked: (Option<String>, String, String) = tx
+        .query_row(
+            "SELECT task,created_by,agent FROM agent_jobs WHERE id=?1",
+            [&job],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(db_error)?;
+    if let (Some(task), recipient, agent) = linked {
+        let body = format!(
+            "Agent result awaiting review ({}): {}",
+            input.outcome, input.summary
+        );
+        tx.execute(
+            "INSERT INTO task_comments VALUES (?1,?2,?3,?4,?5)",
+            params![uuid::Uuid::new_v4().to_string(), task, agent, body, now()],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO task_notifications(recipient,task,body,created) VALUES (?1,?2,?3,?4)",
+            params![recipient, task, body, now()],
+        )
+        .map_err(db_error)?;
+    }
     tx.commit().map_err(db_error)?;
+    Ok(StatusCode::OK)
+}
+
+#[derive(Deserialize)]
+pub struct Question {
+    fence: String,
+    question: String,
+    id: String,
+}
+pub async fn ask(
+    State(state): State<Db>,
+    headers: HeaderMap,
+    Path(job): Path<String>,
+    Json(input): Json<Question>,
+) -> Result<StatusCode, ApiError> {
+    if !valid_id(&input.id) || input.question.trim().is_empty() || input.question.len() > 4000 {
+        return Err(err(StatusCode::BAD_REQUEST, "invalid question"));
+    }
+    let mut db = state.lock().unwrap();
+    let tx = db.transaction().map_err(db_error)?;
+    let h = host(&tx, &headers)?;
+    if !claims_enabled(&tx)? {
+        return Err(err(StatusCode::FORBIDDEN, "host claims disabled"));
+    }
+    let row:Option<(String,String,i64,String,Option<String>,String,String)>=tx.query_row("SELECT c.host,c.fence,c.deadline,j.state,j.task,j.agent,j.created_by FROM host_claims c JOIN agent_jobs j ON j.id=c.job WHERE c.job=?1",[&job],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).optional().map_err(db_error)?;
+    let (owner, fence, deadline, status, task, agent, recipient) =
+        row.ok_or(err(StatusCode::NOT_FOUND, "claim not found"))?;
+    if owner != h.id || agent != h.agent || !task_allowed(&tx, &h.sponsor, &task)? {
+        return Err(err(StatusCode::FORBIDDEN, "claim denied"));
+    }
+    if fence != input.fence {
+        return Err(err(StatusCode::CONFLICT, "stale fence"));
+    }
+    let prior: Option<(String, String)> = tx
+        .query_row(
+            "SELECT job,question FROM job_questions WHERE id=?1",
+            [&input.id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(db_error)?;
+    if let Some((j, q)) = prior {
+        return if j == job && q == input.question {
+            Ok(StatusCode::OK)
+        } else {
+            Err(err(StatusCode::CONFLICT, "question id conflict"))
+        };
+    }
+    if status != "host_claimed" || deadline <= now() {
+        return Err(err(StatusCode::CONFLICT, "claim expired"));
+    }
+    let task = task.ok_or(err(StatusCode::BAD_REQUEST, "ticket required"))?;
+    tx.execute(
+        "INSERT INTO job_questions VALUES (?1,?2,?3,NULL,?4)",
+        params![input.id, job, input.question, now()],
+    )
+    .map_err(db_error)?;
+    tx.execute(
+        "UPDATE agent_jobs SET state='waiting_input',version=version+1 WHERE id=?1",
+        [&job],
+    )
+    .map_err(db_error)?;
+    tx.execute(
+        "INSERT INTO task_comments VALUES (?1,?2,?3,?4,?5)",
+        params![input.id, task, agent, input.question, now()],
+    )
+    .map_err(db_error)?;
+    tx.execute(
+        "INSERT INTO task_notifications(recipient,task,body,created) VALUES (?1,?2,?3,?4)",
+        params![recipient, task, input.question, now()],
+    )
+    .map_err(db_error)?;
+    job_audit(&tx, &h.sponsor, &job, "waiting_input")?;
+    tx.commit().map_err(db_error)?;
+    Ok(StatusCode::OK)
+}
+#[derive(Deserialize)]
+pub struct Heartbeat {
+    fence: String,
+}
+pub async fn heartbeat(
+    State(state): State<Db>,
+    headers: HeaderMap,
+    Path(job): Path<String>,
+    Json(input): Json<Heartbeat>,
+) -> Result<StatusCode, ApiError> {
+    let db = state.lock().unwrap();
+    let h = host(&db, &headers)?;
+    if !claims_enabled(&db)? {
+        return Err(err(StatusCode::FORBIDDEN, "host disabled"));
+    }
+    let task: Option<String> = db
+        .query_row(
+            "SELECT task FROM agent_jobs WHERE id=?1 AND agent=?2",
+            params![job, h.agent],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_error)?
+        .ok_or(err(StatusCode::NOT_FOUND, "job not found"))?;
+    if !task_allowed(&db, &h.sponsor, &task)? {
+        return Err(err(StatusCode::FORBIDDEN, "access revoked"));
+    }
+    let updated=db.execute("UPDATE host_claims SET deadline=?1 WHERE job=?2 AND host=?3 AND fence=?4 AND deadline>?5 AND EXISTS(SELECT 1 FROM agent_jobs WHERE id=?2 AND state='host_claimed')",params![now()+30,job,h.id,input.fence,now()]).map_err(db_error)?;
+    if updated != 1 {
+        return Err(err(StatusCode::CONFLICT, "claim stopped"));
+    }
     Ok(StatusCode::OK)
 }

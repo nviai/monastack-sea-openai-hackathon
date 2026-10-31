@@ -200,9 +200,52 @@ pub async fn create(
     if exists {
         return Err(err(StatusCode::CONFLICT, "job id exists"));
     }
+    let linked_task = if let Some(task) = &p.task {
+        Some(task.clone())
+    } else {
+        // Each standalone assignment gets an isolated private project and ticket.
+        let project = uuid::Uuid::new_v4().to_string();
+        let task = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO projects VALUES (?1,'Agent assignments',?2)",
+            params![project, who],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO project_rules VALUES (?1,'private')",
+            [&project],
+        )
+        .map_err(db_error)?;
+        let title: String = p.instruction.chars().take(120).collect();
+        tx.execute(
+            "INSERT INTO tasks VALUES (?1,?2,?3,?4,'todo',1,?5)",
+            params![task, project, title, p.agent, who],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO task_comments VALUES (?1,?2,?3,?4,?5)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                task,
+                who,
+                p.instruction,
+                now()
+            ],
+        )
+        .map_err(db_error)?;
+        Some(task)
+    };
     tx.execute(
         "INSERT INTO agent_jobs VALUES (?1,?2,?3,?4,?5,?6,'proposed',1,?7)",
-        params![p.id, who, p.agent, p.task, p.instruction, p.budget, now()],
+        params![
+            p.id,
+            who,
+            p.agent,
+            linked_task,
+            p.instruction,
+            p.budget,
+            now()
+        ],
     )
     .map_err(db_error)?;
     audit(&tx, &p.op, &payload, &who, &p.id, "proposed")?;
@@ -338,4 +381,72 @@ pub async fn history(
         })
         .map_err(db_error)?;
     Ok(Json(rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?))
+}
+
+/// Owner review is separate from execution approval and never trusts a host exit alone.
+pub async fn review(
+    State(state): State<Db>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(d): Json<Decision>,
+) -> Result<StatusCode, ApiError> {
+    if !valid_id(&d.op) || !matches!(d.action.as_str(), "accept" | "reject") {
+        return Err(err(StatusCode::BAD_REQUEST, "invalid review"));
+    }
+    let mut db = state.lock().unwrap();
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(db_error)?;
+    let who = actor(&tx, &headers)?;
+    require_job_access(&tx, &who, &id)?;
+    let (owner, status, version, task): (String, String, i64, Option<String>) = tx
+        .query_row(
+            "SELECT created_by,state,version,task FROM agent_jobs WHERE id=?1",
+            [&id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(db_error)?;
+    if who != owner && !admin(&tx, &who)? {
+        return Err(err(StatusCode::FORBIDDEN, "review not permitted"));
+    }
+    if let Some(t) = &task {
+        if !super::tasks::can_edit_task(&tx, &who, t)? {
+            return Err(err(StatusCode::FORBIDDEN, "project is read-only"));
+        }
+    }
+    let payload = format!("review:{}:{}", id, serde_json::to_string(&d).unwrap());
+    if replay(&tx, &d.op, &payload, &who)? {
+        return Ok(StatusCode::OK);
+    }
+    if status != "host_reported" || version != d.expected_version {
+        return Err(err(StatusCode::CONFLICT, "stale or unreviewable result"));
+    }
+    let next = if d.action == "accept" {
+        "completed"
+    } else {
+        "rejected"
+    };
+    tx.execute(
+        "UPDATE agent_jobs SET state=?1,version=version+1 WHERE id=?2",
+        params![next, id],
+    )
+    .map_err(db_error)?;
+    if let Some(task) = task {
+        if d.action == "accept" {
+            tx.execute(
+                "UPDATE tasks SET state='done',version=version+1 WHERE id=?1",
+                [&task],
+            )
+            .map_err(db_error)?;
+        }
+        let body = format!("Result review: {}", next);
+        tx.execute(
+            "INSERT INTO task_comments VALUES (?1,?2,?3,?4,?5)",
+            params![uuid::Uuid::new_v4().to_string(), task, who, body, now()],
+        )
+        .map_err(db_error)?;
+    }
+    audit(&tx, &d.op, &payload, &who, &id, next)?;
+    tx.commit().map_err(db_error)?;
+    Ok(StatusCode::OK)
 }

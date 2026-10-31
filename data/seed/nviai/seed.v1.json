@@ -19,56 +19,64 @@
       "name": "Nguyen Van An",
       "email": "an@nviai.com",
       "role": "org-admin",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "thao",
       "name": "Do Phuong Thao",
       "email": "thao@nviai.com",
       "role": "pm",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "hung",
       "name": "Vu Manh Hung",
       "email": "hung@nviai.com",
       "role": "dev",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "tuan",
       "name": "Tran Anh Tuan",
       "email": "tuan@nviai.com",
       "role": "dev",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "linh",
       "name": "Pham Khanh Linh",
       "email": "linh@nviai.com",
       "role": "qa",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "mai",
       "name": "Le Thi Mai",
       "email": "mai@nviai.com",
       "role": "sales",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "duc",
       "name": "Hoang Minh Duc",
       "email": "duc@nviai.com",
       "role": "cs",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "van",
       "name": "Ngo Thu Van",
       "email": "van@nviai.com",
       "role": "accountant",
-      "kind": "human"
+      "kind": "human",
+      "archived": true
     },
     {
       "id": "le-pha",

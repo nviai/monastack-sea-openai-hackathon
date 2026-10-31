@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:monastack/features/agents/agent_chat.dart';
+import 'package:monastack/features/agents/ui_actions.dart';
 import 'package:monastack/shared/node_request.dart';
 
 const actors = [
@@ -8,6 +9,67 @@ const actors = [
   {'id': 'qa-agent', 'name': 'QA Agent', 'kind': 'agent', 'role': 'agent'},
 ];
 void main() {
+  testWidgets(
+    'UI tool calls execute locally and report results before the final answer',
+    (tester) async {
+      late BuildContext root;
+      final opened = <String>[];
+      var calls = 0;
+      Future<dynamic> request(
+        String method,
+        String path, [
+        Object? body,
+      ]) async {
+        if (method == 'GET') return {'configured': true, 'model': 'test'};
+        final payload = body as Map;
+        calls++;
+        if (calls == 1) {
+          expect(
+            (payload['ui_controls'] as List).any(
+              (c) => c['id'] == 'open:tasks',
+            ),
+            isTrue,
+          );
+          return {
+            'ui_action': {'id': 'open:tasks', 'value': ''},
+            'ui_call_id': 'call-1',
+            'ui_history': [],
+            'text': 'Working',
+          };
+        }
+        expect((payload['ui_history'] as List).last['call_id'], 'call-1');
+        return {'text': 'Task board opened.'};
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              root = context;
+              return Scaffold(
+                body: AgentChat(
+                  request: request,
+                  actors: actors,
+                  uiActions: UiActions(
+                    root: () => root,
+                    active: () => true,
+                    navigate: opened.add,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Open task board');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      expect(opened, ['tasks']);
+      expect(calls, 2);
+      expect(find.text('Task board opened.'), findsOneWidget);
+    },
+  );
   testWidgets('sends selected agent history and keeps agents separate', (
     tester,
   ) async {
@@ -43,7 +105,7 @@ void main() {
     expect((payloads.last['messages'] as List).length, 3);
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Dev Agent · AI Agent').last);
+    await tester.tap(find.text('Dev Agent · Software Engineer').last);
     await tester.pumpAndSettle();
     expect(find.text('Agent reply'), findsNothing);
     await tester.enterText(find.byType(TextField), 'Dev question');

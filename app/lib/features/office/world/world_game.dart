@@ -1,3 +1,5 @@
+import 'package:monastack/shared/actor_role.dart';
+
 import 'dart:math' as math;
 
 import 'package:flame/game.dart';
@@ -395,6 +397,10 @@ class WorldGame extends FlameGame {
         denied: denied,
       );
     }
+    final occupiedLabels = <Rect>[
+      for (final face in _faceSlots.values)
+        Rect.fromCircle(center: face.center, radius: face.diameter / 2 + 4),
+    ];
     for (final figure in _figures) {
       final face = _faceSlots[figure.actor];
       final anchor = face != null
@@ -409,14 +415,25 @@ class WorldGame extends FlameGame {
             '$name (you)',
             dot: const Color(0xff2f9e6f),
             emphasis: true,
+            occupied: occupiedLabels,
+            viewport: Offset.zero & Size(size.x, size.y),
           );
         case _Kind.remote:
-          paintLabel(canvas, anchor, name, dot: const Color(0xff2f9e6f));
-        case _Kind.agent:
           paintLabel(
             canvas,
             anchor,
             name,
+            dot: const Color(0xff2f9e6f),
+            occupied: occupiedLabels,
+            viewport: Offset.zero & Size(size.x, size.y),
+          );
+        case _Kind.agent:
+          paintLabel(
+            canvas,
+            anchor,
+            agentDisplayName(figure.actor, name),
+            occupied: occupiedLabels,
+            viewport: Offset.zero & Size(size.x, size.y),
             dot: onlineAgents.contains(figure.actor)
                 ? const Color(0xff2f9e6f)
                 : const Color(0xff9aa6ad),

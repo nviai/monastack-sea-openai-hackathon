@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -219,7 +221,7 @@ class _RoomMembershipState extends State<RoomMembership> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 720,
       height: 620,
@@ -264,7 +266,11 @@ class _RoomMembershipState extends State<RoomMembership> {
                     .map(
                       (item) => DropdownMenuItem(
                         value: item['id'] as String,
-                        child: Text(item['name'] as String),
+                        child: Text(
+                          item['name'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),
@@ -290,7 +296,11 @@ class _RoomMembershipState extends State<RoomMembership> {
                     .map(
                       (item) => DropdownMenuItem(
                         value: item['id'] as String,
-                        child: Text(item['name'] as String),
+                        child: Text(
+                          item['name'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),

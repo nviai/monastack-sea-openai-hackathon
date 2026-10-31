@@ -108,6 +108,7 @@ abstract class _CollaborationConnection extends _CollaborationSession {
       voice?.dispose();
       voice = VoiceController(realtime: realtime!, session: () => session)
         ..addListener(_voiceChanged);
+      await voice!.follow(widget.room);
       await refresh();
       await refreshPresence();
     } catch (_) {

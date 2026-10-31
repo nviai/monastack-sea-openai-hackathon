@@ -150,6 +150,11 @@ pub struct Project {
     private: bool,
     owner: String,
     can_edit: bool,
+    description: String,
+    url: String,
+    demo: bool,
+    task_count: i64,
+    done_count: i64,
 }
 #[derive(Deserialize, Serialize)]
 pub struct NewProject {
@@ -165,7 +170,7 @@ pub async fn projects(
 ) -> Result<Json<Vec<Project>>, ApiError> {
     let db = state.lock().unwrap();
     let who = actor(&db, &headers)?;
-    let mut stmt = db.prepare("SELECT id,name,created_by,EXISTS(SELECT 1 FROM project_rules WHERE project=projects.id) FROM projects ORDER BY name,id").map_err(db_error)?;
+    let mut stmt = db.prepare("SELECT p.id,p.name,p.created_by,EXISTS(SELECT 1 FROM project_rules WHERE project=p.id),COALESCE(d.description,''),COALESCE(d.url,''),COALESCE(d.demo,0),(SELECT COUNT(*) FROM tasks WHERE project=p.id),(SELECT COUNT(*) FROM tasks WHERE project=p.id AND state='done') FROM projects p LEFT JOIN project_details d ON d.project=p.id ORDER BY COALESCE(d.demo,0) DESC,p.name,p.id").map_err(db_error)?;
     let rows = stmt
         .query_map([], |r| {
             Ok(Project {
@@ -174,6 +179,11 @@ pub async fn projects(
                 owner: r.get(2)?,
                 private: r.get(3)?,
                 can_edit: false,
+                description: r.get(4)?,
+                url: r.get(5)?,
+                demo: r.get(6)?,
+                task_count: r.get(7)?,
+                done_count: r.get(8)?,
             })
         })
         .map_err(db_error)?;
@@ -477,6 +487,7 @@ pub async fn add_comment(
         params![c.id, task, who, c.body, now()],
     )
     .map_err(db_error)?;
+    tx.execute("INSERT INTO task_notifications(recipient,task,body,created) SELECT id,?1,?2,?3 FROM actors WHERE kind='human' AND id<>?4 AND (id=(SELECT created_by FROM tasks WHERE id=?1) OR id=(SELECT assignee FROM tasks WHERE id=?1))", params![task,c.body,now(),who]).map_err(db_error)?;
     audit(&tx, &c.op, &payload, &who, "task", &task, "comment_added")?;
     tx.commit().map_err(db_error)?;
     Ok(StatusCode::CREATED)

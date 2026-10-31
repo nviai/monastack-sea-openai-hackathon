@@ -1,3 +1,5 @@
+import 'package:monastack/shared/workspace_theme.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -138,7 +140,7 @@ class _DocumentLibraryState extends ConsumerState<DocumentLibrary> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 720,
       height: 620,
@@ -266,12 +268,20 @@ class _DocumentEditorState extends State<_DocumentEditor> {
             items: [
               const DropdownMenuItem(
                 value: 'workspace',
-                child: Text('Workspace'),
+                child: Text(
+                  'Workspace',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               ...widget.rooms.map(
                 (r) => DropdownMenuItem(
                   value: 'room:${r['id']}',
-                  child: Text('${r['name']} room'),
+                  child: Text(
+                    '${r['name']} room',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],

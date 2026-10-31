@@ -44,9 +44,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('project-picker')));
+    await tester.tap(find.text('Restricted').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Restricted · private').last);
+    expect(find.text('Readable task'), findsOneWidget);
+    expect(find.byType(DropdownButton<String>), findsNothing);
+    await tester.enterText(find.byType(TextField), 'not-a-match');
+    await tester.pumpAndSettle();
+    expect(find.text('Readable task'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Readable');
     await tester.pumpAndSettle();
     expect(find.text('Readable task'), findsOneWidget);
     expect(find.text('Task'), findsNothing);
@@ -95,18 +100,28 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Project'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Example project');
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Example project',
+    );
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Workspace'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Example project').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Task'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Example task');
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Example task',
+    );
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Unassigned').last);
@@ -171,14 +186,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Project'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Restricted');
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Restricted',
+    );
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Private'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('project-picker')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Restricted · private').last);
+    await tester.tap(find.text('Restricted').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Members'));
     await tester.pumpAndSettle();

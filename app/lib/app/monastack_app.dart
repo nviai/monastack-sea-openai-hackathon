@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:monastack/shared/workspace_theme.dart';
+import 'package:monastack/features/identity/sign_in_shell.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,11 +14,15 @@ import 'package:monastack/features/office/data/office_core.dart';
 import 'package:monastack/platform/core_bridge.dart';
 import 'package:monastack/shared/brand/monastack_logo.dart';
 
-final seedProvider = FutureProvider<Map<String, dynamic>>(
-  (ref) async =>
-      jsonDecode(await rootBundle.loadString('assets/seed.v1.json'))
-          as Map<String, dynamic>,
-);
+final seedProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final seed = jsonDecode(
+    await rootBundle.loadString('assets/seed.v1.json'),
+  ) as Map<String, dynamic>;
+  seed['actors'] = (seed['actors'] as List)
+      .where((actor) => actor['archived'] != true)
+      .toList();
+  return seed;
+});
 
 class Monastack extends StatelessWidget {
   const Monastack({super.key});
@@ -23,13 +30,7 @@ class Monastack extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Monastack',
-    theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff69766b),
-        surface: const Color(0xfff7f5ef),
-      ),
-    ),
+    theme: workspaceTheme(),
     home: const Office(),
   );
 }
@@ -138,6 +139,7 @@ class _OfficeState extends ConsumerState<Office> {
             final actors = (data['actors'] as List)
                 .cast<Map<String, dynamic>>();
             final collaboration = Collaboration(
+              onGoToRoom: (id) => worldKey.currentState?.goToRoom(id),
               key: collaborationKey,
               room: room,
               position: position,
@@ -182,39 +184,7 @@ class _OfficeState extends ConsumerState<Office> {
               },
             );
             if (connectedActor == null) {
-              return SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: SizedBox(
-                      width: 420,
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Center(child: MonastackLogo(size: 56)),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Welcome to Monastack',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              collaboration,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
+              return SignInShell(child: collaboration);
             }
             final selected = rooms.firstWhere((r) => r['id'] == room);
             final banner =
@@ -226,9 +196,17 @@ class _OfficeState extends ConsumerState<Office> {
               child: Row(
                 children: [
                   Container(
-                    width: 240,
+                    width: 248,
+                    margin: const EdgeInsets.fromLTRB(12, 12, 0, 12),
                     padding: const EdgeInsets.fromLTRB(22, 25, 18, 18),
-                    color: const Color(0xff253d38),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xff253d38), Color(0xff344f43)],
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -249,7 +227,7 @@ class _OfficeState extends ConsumerState<Office> {
                         ),
                         const SizedBox(height: 12),
                         const Text(
-                          'Your office,\ntogether.',
+                          'Your AI Office,\ntogether.',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 25,
@@ -295,7 +273,7 @@ class _OfficeState extends ConsumerState<Office> {
                                     child: ListTile(
                                       dense: true,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                       selected: r['id'] == room,
                                       selectedTileColor: const Color(
@@ -371,7 +349,7 @@ class _OfficeState extends ConsumerState<Office> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text(
-                                      'NVIAI / OFFICE',
+                                      'WORKSPACE / OFFICE',
                                       style: TextStyle(
                                         fontSize: 11,
                                         letterSpacing: 1.6,
@@ -389,6 +367,28 @@ class _OfficeState extends ConsumerState<Office> {
                                     ),
                                   ],
                                 ),
+                              ),
+                              IconButton(
+                                tooltip: 'Open task board',
+                                onPressed: () => collaborationKey.currentState
+                                    ?.openTool('tasks'),
+                                icon: const Icon(Icons.view_kanban_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'Open chat',
+                                onPressed: () =>
+                                    collaborationKey.currentState?.openChat(),
+                                icon: const Icon(Icons.forum_outlined),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                onPressed: () => collaborationKey.currentState
+                                    ?.openWorkspaceTools(),
+                                icon: const Icon(
+                                  Icons.grid_view_rounded,
+                                  size: 17,
+                                ),
+                                label: const Text('Workspace'),
                               ),
                             ],
                           ),
@@ -460,13 +460,13 @@ class _OfficeState extends ConsumerState<Office> {
                     ),
                   ),
                   Container(
-                    width: 270,
-                    padding: const EdgeInsets.all(22),
-                    decoration: const BoxDecoration(
-                      color: Color(0xfffcfbf7),
-                      border: Border(
-                        left: BorderSide(color: Color(0xffe8e8e0)),
-                      ),
+                    width: 292,
+                    margin: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfffcfbf7),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xffdfe5d9)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -499,7 +499,12 @@ class _OfficeState extends ConsumerState<Office> {
                           ),
                         ),
                         const Divider(),
-                        collaboration,
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.sizeOf(context).height * .45,
+                          ),
+                          child: SingleChildScrollView(child: collaboration),
+                        ),
                       ],
                     ),
                   ),

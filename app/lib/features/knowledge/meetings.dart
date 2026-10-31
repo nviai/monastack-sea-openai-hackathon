@@ -1,3 +1,4 @@
+import 'package:monastack/shared/workspace_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -164,7 +165,7 @@ class _MeetingsState extends ConsumerState<Meetings> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => WorkspaceDialog(
     child: SizedBox(
       width: 780,
       height: 600,
@@ -294,17 +295,26 @@ class _MeetingFormState extends State<_MeetingForm> {
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: scope,
             decoration: const InputDecoration(labelText: 'Visibility'),
             items: [
               const DropdownMenuItem(
                 value: 'workspace',
-                child: Text('Workspace'),
+                child: Text(
+                  'Workspace',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               ...widget.rooms.map(
                 (r) => DropdownMenuItem(
                   value: 'room:${r['id']}',
-                  child: Text('${r['name']} room'),
+                  child: Text(
+                    '${r['name']} room',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],

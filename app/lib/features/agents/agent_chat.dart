@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'ui_actions.dart';
+
 import 'package:flutter/material.dart';
 import 'package:monastack/shared/actor_role.dart';
 import 'package:monastack/shared/node_request.dart';
@@ -11,8 +13,10 @@ class AgentChat extends StatefulWidget {
     required this.request,
     required this.actors,
     this.initialAgent,
+    this.uiActions,
   });
   final String? initialAgent;
+  final UiActions? uiActions;
   final NodeRequest request;
   final List<Map<String, dynamic>> actors;
   @override
@@ -95,16 +99,59 @@ class _AgentChatState extends State<AgentChat> {
       error = null;
     });
     try {
-      final response = await widget.request(
+      var response = await widget.request(
         'POST',
         '/v1/agents/${Uri.encodeComponent(target)}/chat',
-        {'messages': messages},
+        {
+          'messages': messages,
+          if (widget.uiActions != null)
+            'ui_controls': widget.uiActions!.snapshot(),
+        },
       );
+      for (var step = 0; response['ui_action'] != null && step < 10; step++) {
+        if (!mounted || widget.uiActions == null) return;
+        String outcome;
+        try {
+          outcome = await widget.uiActions!.execute(
+            Map<String, dynamic>.from(response['ui_action'] as Map),
+          );
+        } catch (_) {
+          outcome = 'The control could not be invoked. Inspect the current screen and do not assume success.';
+        }
+        if (!mounted) return;
+        response = await widget.request(
+          'POST',
+          '/v1/agents/${Uri.encodeComponent(target)}/chat',
+          {
+            'messages': messages,
+            'ui_controls': widget.uiActions!.snapshot(),
+            'ui_history': [
+              ...?response['ui_history'] as List?,
+              {
+                'type': 'function_call_output',
+                'call_id': response['ui_call_id'],
+                'output': outcome,
+              },
+            ],
+          },
+        );
+      }
+      if (response['ui_action'] != null) {
+        response = {
+          'text': 'UI step limit reached. Ask me to continue.',
+          'incomplete': true,
+        };
+      }
       if (!mounted) return;
       setState(() {
         histories[target]!.addAll([
           {'role': 'user', 'content': text},
-          {'role': 'assistant', 'content': response['text'] as String},
+          {
+            'role': 'assistant',
+            'content':
+                response['text'] as String? ??
+                'UI step limit reached. Ask me to continue.',
+          },
         ]);
         composer.clear();
         if (response['incomplete'] == true) {
@@ -166,6 +213,7 @@ class _AgentChatState extends State<AgentChat> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          isExpanded: true,
           initialValue: agent,
           decoration: const InputDecoration(
             labelText: 'Agent',
@@ -176,7 +224,11 @@ class _AgentChatState extends State<AgentChat> {
               .map(
                 (a) => DropdownMenuItem(
                   value: a['id'] as String,
-                  child: Text('${a['name']} · ${actorRoleLabel(a['role'])}'),
+                  child: Text(
+                    actorDisplayName(a),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               )
               .toList(),

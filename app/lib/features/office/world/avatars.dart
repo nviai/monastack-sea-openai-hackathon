@@ -172,6 +172,8 @@ void paintLabel(
   Color? dot,
   bool muted = false,
   bool emphasis = false,
+  List<Rect>? occupied,
+  Rect? viewport,
 }) {
   final painter = TextPainter(
     text: TextSpan(
@@ -185,17 +187,58 @@ void paintLabel(
     textDirection: TextDirection.ltr,
     maxLines: 1,
     ellipsis: '…',
-  )..layout(maxWidth: 160);
+  )..layout(maxWidth: 220);
   final dotSpace = dot == null ? 0.0 : 10.0;
   final width = painter.width + 14 + dotSpace;
-  final rect = RRect.fromRectAndRadius(
-    Rect.fromCenter(
-      center: anchor + const Offset(0, -10),
-      width: width,
-      height: painter.height + 6,
-    ),
-    const Radius.circular(10),
+  var bounds = Rect.fromCenter(
+    center: anchor + const Offset(0, -10),
+    width: width,
+    height: painter.height + 6,
   );
+  if (viewport != null) {
+    bounds = bounds.shift(
+      Offset(
+        bounds.left < viewport.left + 4
+            ? viewport.left + 4 - bounds.left
+            : bounds.right > viewport.right - 4
+            ? viewport.right - 4 - bounds.right
+            : 0,
+        bounds.top < viewport.top + 4
+            ? viewport.top + 4 - bounds.top
+            : bounds.bottom > viewport.bottom - 4
+            ? viewport.bottom - 4 - bounds.bottom
+            : 0,
+      ),
+    );
+  }
+  final originalBounds = bounds;
+  for (var attempt = 0; attempt < 60; attempt++) {
+    final step = (attempt + 1) ~/ 2;
+    final direction = attempt.isOdd ? -1 : 1;
+    final candidate = originalBounds.shift(
+      Offset(0, direction * step * (painter.height + 10)),
+    );
+    if (viewport != null &&
+        (candidate.top < viewport.top + 4 ||
+            candidate.bottom > viewport.bottom - 4)) {
+      continue;
+    }
+    if (!(occupied?.any((r) => r.inflate(3).overlaps(candidate)) ?? false)) {
+      bounds = candidate;
+      break;
+    }
+  }
+  occupied?.add(bounds);
+  if ((bounds.center - (anchor + const Offset(0, -10))).distance > 12) {
+    canvas.drawLine(
+      anchor,
+      bounds.bottomCenter,
+      Paint()
+        ..color = const Color(0x6671847a)
+        ..strokeWidth = 1,
+    );
+  }
+  final rect = RRect.fromRectAndRadius(bounds, const Radius.circular(10));
   canvas.drawRRect(
     rect.shift(const Offset(0, 1)),
     Paint()..color = const Color(0x22000000),

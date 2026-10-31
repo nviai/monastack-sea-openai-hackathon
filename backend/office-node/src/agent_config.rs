@@ -75,13 +75,14 @@ fn seed_names(tx: &Transaction<'_>) -> rusqlite::Result<()> {
 /// Persist complete presets once, retaining explicit administrator customization.
 pub fn seed(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     seed_names(tx)?;
+    seed_english_language(tx)?;
     let applied: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-agent-presets-v1')",
         [],
         |r| r.get(0),
     )?;
     if applied {
-        return Ok(());
+        return seed_entry_greeting(tx);
     }
     for id in IDS {
         let prior: Option<(String, i64)> = tx
@@ -116,6 +117,91 @@ pub fn seed(tx: &Transaction<'_>) -> rusqlite::Result<()> {
         "INSERT INTO metadata VALUES ('seed-agent-presets-v1','applied')",
         [],
     )?;
+    seed_entry_greeting(tx)
+}
+/// One-time workspace default; later explicit language choices remain configurable.
+fn seed_english_language(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    let applied: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='agent-english-default-v1')",
+        [],
+        |r| r.get(0),
+    )?;
+    if applied {
+        return Ok(());
+    }
+    for id in IDS {
+        let row: Option<(String, i64)> = tx
+            .query_row(
+                "SELECT config,version FROM agent_configuration WHERE agent=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if let Some((before, version)) = row {
+            let mut cfg: Value = serde_json::from_str(&before).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            if cfg["language"] == "en" {
+                continue;
+            }
+            cfg["language"] = json!("en");
+            let after = cfg.to_string();
+            tx.execute("UPDATE agent_configuration SET config=?2,version=?3,updated_by='seed',updated=?4 WHERE agent=?1",params![id,after,version+1,now()])?;
+            tx.execute("INSERT INTO agent_configuration_audit(agent,actor,source,version,before_json,after_json,created) VALUES (?1,'seed','english-default',?2,?3,?4,?5)",params![id,version+1,before,after,now()])?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO metadata VALUES ('agent-english-default-v1','applied')",
+        [],
+    )?;
+    Ok(())
+}
+/// Apply the requested new entry policy once; subsequent admin choices persist.
+fn seed_entry_greeting(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    let applied: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='agent-entry-greeting-v1')",
+        [],
+        |r| r.get(0),
+    )?;
+    if applied {
+        return Ok(());
+    }
+    for id in IDS {
+        let row: Option<(String, i64)> = tx
+            .query_row(
+                "SELECT config,version FROM agent_configuration WHERE agent=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if let Some((before, version)) = row {
+            let mut config: Value = serde_json::from_str(&before).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            if config["activation_mode"] == "automatic" && config["greeting"] == true {
+                continue;
+            }
+            config["activation_mode"] = json!("automatic");
+            config["greeting"] = json!(true);
+            let after = config.to_string();
+            if after != before {
+                tx.execute("UPDATE agent_configuration SET config=?2,version=?3,updated_by='seed',updated=?4 WHERE agent=?1",params![id,after,version+1,now()])?;
+                tx.execute("INSERT INTO agent_configuration_audit(agent,actor,source,version,before_json,after_json,created) VALUES (?1,'seed','entry-greeting-default',?2,?3,?4,?5)",params![id,version+1,before,after,now()])?;
+            }
+        }
+    }
+    tx.execute(
+        "INSERT INTO metadata VALUES ('agent-entry-greeting-v1','applied')",
+        [],
+    )?;
     Ok(())
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -138,7 +224,7 @@ pub struct Config {
     pub session_seconds: i64,
 }
 fn default_activation_mode() -> String {
-    "voice".into()
+    "automatic".into()
 }
 fn default_muted_timeout() -> i64 {
     5
@@ -194,7 +280,7 @@ pub fn defaults(id: &str) -> Config {
         greeting: true,
         activation_mode: default_activation_mode(),
         muted_idle_seconds: default_muted_timeout(),
-        language: "auto".into(),
+        language: "en".into(),
         idle_seconds: 60,
         session_seconds: 600,
     }
@@ -599,7 +685,7 @@ mod tests {
         value.as_object_mut().unwrap().remove("activation_mode");
         value.as_object_mut().unwrap().remove("muted_idle_seconds");
         let old: Config = serde_json::from_value(value).unwrap();
-        assert_eq!(old.activation_mode, "voice");
+        assert_eq!(old.activation_mode, "automatic");
         assert_eq!(old.muted_idle_seconds, 5);
         let mut db = db();
         let mut config = defaults("mona");
