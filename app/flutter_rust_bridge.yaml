@@ -1,0 +1,5 @@
+# Regenerate with `flutter_rust_bridge_codegen generate` from app/ using codegen 2.13.0.
+rust_input: crate::api
+rust_root: ../core/
+dart_output: lib/platform/bridge/
+dart_entrypoint_class_name: CoreLib

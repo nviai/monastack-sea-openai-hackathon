@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 
 import 'package:monastack/features/office/presence/remote_motion.dart';
 
-typedef RouteFinder = List<List<int>>? Function(
+/// Resolves a walkable route including both ends, or `null` when the goal is
+/// blocked or requires membership. Throws when the map service is unavailable.
+typedef RouteFinder = Future<List<List<int>>?> Function(
   List<int> start,
   List<int> goal,
 );
@@ -98,21 +100,42 @@ class OfficeWorldState extends State<OfficeWorld> {
     widget.onPosition(List.of(point), room);
   }
 
-  void moveTo(List<int> destination) {
-    try {
-      final route = widget.findPath(current, destination);
+  int _routeRequest = 0;
+
+  /// Plans asynchronously; a newer request or a policy change discards the
+  /// result. If the avatar stepped while planning, the route is replanned so
+  /// it always starts at the current cell.
+  Future<void> moveTo(List<int> destination) async {
+    final request = ++_routeRequest;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final from = List<int>.of(current);
+      List<List<int>>? route;
+      try {
+        route = await widget.findPath(from, destination);
+      } catch (_) {
+        if (mounted && request == _routeRequest) {
+          widget.onError('The Rust map service is unavailable.');
+        }
+        return;
+      }
+      if (!mounted || request != _routeRequest) return;
       if (route == null) {
         widget.onError('That destination is blocked or requires membership.');
         return;
       }
+      if (route.isEmpty ||
+          route.first[0] != current[0] ||
+          route.first[1] != current[1]) {
+        continue;
+      }
       _game.route = route.skip(1).toList();
       focus.requestFocus();
-    } catch (_) {
-      widget.onError('The Rust map service is unavailable.');
+      return;
     }
   }
 
   void policyChanged({required bool reset}) {
+    _routeRequest++;
     _game.route = [];
     if (reset) {
       _game.reset();
@@ -121,12 +144,12 @@ class OfficeWorldState extends State<OfficeWorld> {
     }
   }
 
-  void goToRoom(String room) {
+  Future<void> goToRoom(String room) async {
     if (map == null) return;
     final r = (map!['rooms'] as List).cast<Map<String, dynamic>>().firstWhere(
       (r) => r['id'] == room,
     );
-    moveTo((r['spawn'] as List).cast<int>());
+    await moveTo((r['spawn'] as List).cast<int>());
   }
 
   @override

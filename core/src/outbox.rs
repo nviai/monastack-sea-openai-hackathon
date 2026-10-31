@@ -180,57 +180,6 @@ pub fn apply(db: &mut Connection, op: Operation) -> Result<Vec<Entry>, &'static 
         }
     }
 }
-#[derive(Deserialize)]
-struct BridgeRequest {
-    db_path: String,
-    #[serde(flatten)]
-    operation: Operation,
-}
-#[derive(Serialize)]
-struct BridgeResponse {
-    ok: bool,
-    entries: Vec<Entry>,
-    error: Option<&'static str>,
-}
-fn run(input: &str) -> BridgeResponse {
-    let result = (|| {
-        let request: BridgeRequest = serde_json::from_str(input).map_err(|_| "invalid_command")?;
-        let mut db = open(&request.db_path)?;
-        apply(&mut db, request.operation)
-    })();
-    match result {
-        Ok(entries) => BridgeResponse {
-            ok: true,
-            entries,
-            error: None,
-        },
-        Err(error) => BridgeResponse {
-            ok: false,
-            entries: vec![],
-            error: Some(error),
-        },
-    }
-}
-/// Caller provides valid NUL-terminated UTF-8 and frees the returned buffer with `monastack_free_v1`.
-#[no_mangle]
-pub unsafe extern "C" fn monastack_outbox_v1(
-    input: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    if input.is_null() {
-        return std::ptr::null_mut();
-    }
-    let response = match std::ffi::CStr::from_ptr(input).to_str() {
-        Ok(s) => run(s),
-        Err(_) => BridgeResponse {
-            ok: false,
-            entries: vec![],
-            error: Some("invalid_command"),
-        },
-    };
-    std::ffi::CString::new(serde_json::to_string(&response).unwrap())
-        .unwrap()
-        .into_raw()
-}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,46 +1,103 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/platform/core_policy.dart';
+import 'package:monastack/platform/bridge/api/office.dart';
+import 'package:monastack/platform/bridge/api/outbox.dart';
+import 'package:monastack/platform/core_bridge.dart';
+
+TypeMatcher<CoreError> coreError(CoreErrorKind kind) =>
+    isA<CoreError>().having((e) => e.kind, 'kind', kind);
 
 void main() {
-  test('native Rust bridge enforces room membership', () {
-    final seed = jsonDecode(
-      File('assets/seed.v1.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
-    final policy = Policy();
-    expect(policy.allows(seed, 'van', 'finance'), isTrue);
-    expect(policy.allows(seed, 'an', 'finance'), isFalse);
-    expect(policy.allows(seed, 'van', 'hr'), isFalse);
-    expect(policy.path(seed, 'an', [2, 2], [2, 14]), isNull);
+  late OfficeCore core;
+  setUpAll(() async {
+    await CoreBridge.ensureInitialized();
+    core = await OfficeCore.load(
+      seedJson: File('assets/seed.v1.json').readAsStringSync(),
+      mapJson: File('assets/map.v1.json').readAsStringSync(),
+    );
+  });
+  tearDownAll(() => core.dispose());
+
+  const lobby = Cell(x: 2, y: 2);
+  const finance = Cell(x: 2, y: 14);
+
+  test('generated bridge enforces seed membership asynchronously', () async {
+    expect(core.mayEnter(actor: 'van', room: 'finance'), isTrue);
+    expect(core.mayEnter(actor: 'an', room: 'finance'), isFalse);
+    expect(core.mayEnter(actor: 'van', room: 'hr'), isFalse);
+    await expectLater(
+      core.findPath(actor: 'an', start: lobby, goal: finance),
+      throwsA(coreError(CoreErrorKind.inaccessible)),
+    );
+    final route = await core.findPath(
+      actor: 'van',
+      start: lobby,
+      goal: finance,
+    );
+    expect(route.first, lobby);
+    expect(route.last, finance);
     expect(
-      policy.path(
-        seed,
-        'an',
-        [2, 2],
-        [2, 14],
+      await core.findPath(
+        actor: 'an',
+        start: lobby,
+        goal: finance,
         allowedRooms: ['lobby', 'finance'],
       ),
-      isNotNull,
+      isNotEmpty,
     );
-    expect(
-      policy.path(
-        seed,
-        'unknown',
-        [2, 2],
-        [2, 14],
+    await expectLater(
+      core.findPath(
+        actor: 'unknown',
+        start: lobby,
+        goal: finance,
         allowedRooms: ['lobby', 'finance'],
       ),
-      isNull,
+      throwsA(coreError(CoreErrorKind.inaccessible)),
     );
-    final route = policy.path(seed, 'van', [2, 2], [2, 14]);
-    expect(route!.first, [2, 2]);
-    expect(route.last, [2, 14]);
-    expect(
-      policy.path(seed, 'van', [2, 2], [2, 14], allowedRooms: ['lobby']),
-      isNull,
+    await expectLater(
+      core.findPath(
+        actor: 'van',
+        start: lobby,
+        goal: finance,
+        allowedRooms: ['lobby'],
+      ),
+      throwsA(coreError(CoreErrorKind.inaccessible)),
     );
-    expect(policy.path(seed, 'an', [2, 2], [0, 0]), isNull);
+    expect(core.roomAt(cell: finance), 'finance');
+  });
+
+  test('invalid documents fail with typed errors', () async {
+    await expectLater(
+      OfficeCore.load(seedJson: '{}', mapJson: '{}'),
+      throwsA(coreError(CoreErrorKind.invalidSeed)),
+    );
+    await expectLater(
+      OfficeCore.load(
+        seedJson: File('assets/seed.v1.json').readAsStringSync(),
+        mapJson: '{"version":1}',
+      ),
+      throwsA(coreError(CoreErrorKind.invalidMap)),
+    );
+  });
+
+  test('outbox errors keep their stable codes', () async {
+    final dir = Directory.systemTemp.createTempSync('monastack-bridge-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final db = '${dir.path}/outbox.sqlite3';
+    await expectLater(
+      outboxMark(
+        dbPath: db,
+        actor: 'a_an',
+        op: '0123456789abcdef',
+        state: 'delivered',
+      ),
+      throwsA(
+        coreError(
+          CoreErrorKind.outbox,
+        ).having((e) => e.detail, 'detail', 'not_pending'),
+      ),
+    );
+    expect(await outboxList(dbPath: db, actor: 'a_an'), isEmpty);
   });
 }

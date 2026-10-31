@@ -328,26 +328,3 @@ mod tests {
         assert_eq!(m.validate(), Err("invalid zone reference"));
     }
 }
-
-#[cfg(test)]
-mod bridge_tests {
-    use super::super::evaluate_path;
-    #[test]
-    fn path_bridge_denies_private_destinations_and_walls() {
-        let seed: serde_json::Value =
-            serde_json::from_str(include_str!("../../data/seed/nviai/seed.v1.json")).unwrap();
-        let query = |actor: &str, goal| {
-            serde_json::json!({"seed":seed,"actor":actor,"start":[2,2],"goal":goal}).to_string()
-        };
-        assert!(evaluate_path(&query("an", [2, 14])).path.is_none());
-        assert!(evaluate_path(&query("van", [2, 14])).path.is_some());
-        assert!(evaluate_path(&query("an", [0, 0])).path.is_none());
-        assert!(evaluate_path(&query("unknown", [8, 2])).path.is_none());
-        let granted = serde_json::json!({"seed":seed,"actor":"an","start":[2,2],"goal":[2,14],"allowed_rooms":["lobby","finance"]}).to_string();
-        assert!(evaluate_path(&granted).path.is_some());
-        let denied = serde_json::json!({"seed":seed,"actor":"van","start":[2,2],"goal":[2,14],"allowed_rooms":["lobby"]}).to_string();
-        assert!(evaluate_path(&denied).path.is_none());
-        let unknown = serde_json::json!({"seed":seed,"actor":"unknown","start":[2,2],"goal":[2,14],"allowed_rooms":["lobby","finance"]}).to_string();
-        assert!(evaluate_path(&unknown).path.is_none());
-    }
-}

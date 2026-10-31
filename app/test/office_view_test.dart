@@ -19,7 +19,7 @@ void main() {
               seed: const {'rooms': []},
               remote: remote,
               actor: 'synthetic',
-              findPath: (start, goal) => [
+              findPath: (start, goal) async => [
                 start,
                 [3, 2],
                 [4, 2],
@@ -58,7 +58,7 @@ void main() {
               seed: const {'rooms': []},
               remote: remote,
               actor: 'synthetic',
-              findPath: (start, goal) => [
+              findPath: (start, goal) async => [
                 start,
                 [3, 2],
                 [4, 2],
@@ -95,7 +95,7 @@ void main() {
             seed: const {'rooms': []},
             remote: remote,
             actor: 'synthetic',
-            findPath: (start, goal) {
+            findPath: (start, goal) async {
               destinations.add(goal);
               return null;
             },

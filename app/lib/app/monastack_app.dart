@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:monastack/features/office/communication/collaboration.dart';
 import 'package:monastack/features/office/world/office_world.dart';
 import 'package:monastack/features/organization/people_profiles.dart';
-import 'package:monastack/platform/core_policy.dart';
+import 'package:monastack/features/office/data/office_core.dart';
+import 'package:monastack/platform/core_bridge.dart';
 
 final seedProvider = FutureProvider<Map<String, dynamic>>(
   (ref) async =>
@@ -55,10 +56,18 @@ class _OfficeState extends ConsumerState<Office> {
   }
 
   void enter(Map<String, dynamic> seed, Map<String, dynamic> target) {
+    final core = ref.read(officeCoreProvider).value;
+    if (connectedActor == null && core == null) {
+      setState(
+        () => notice =
+            'Rust core unavailable. Rebuild the app; access is denied.',
+      );
+      return;
+    }
     try {
       final allowed = connectedActor != null
           ? (serverRooms?.contains(target['id']) ?? false)
-          : Policy().allows(seed, actor, target['id'] as String);
+          : core!.mayEnter(actor: actor, room: target['id'] as String);
       if (!allowed) {
         setState(
           () => notice =
@@ -76,6 +85,26 @@ class _OfficeState extends ConsumerState<Office> {
     }
   }
 
+  /// Plans with the room snapshot from the node while connected, otherwise
+  /// with the seed preview policy.
+  Future<List<List<int>>?> findPath(List<int> start, List<int> goal) async {
+    final core = await ref.read(officeCoreProvider.future);
+    try {
+      final route = await core.findPath(
+        actor: actor,
+        start: Cell(x: start[0], y: start[1]),
+        goal: Cell(x: goal[0], y: goal[1]),
+        allowedRooms: connectedActor == null ? null : (serverRooms ?? []),
+      );
+      return [
+        for (final cell in route) [cell.x, cell.y],
+      ];
+    } on CoreError catch (e) {
+      if (e.kind == CoreErrorKind.inaccessible) return null;
+      rethrow;
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: ref
@@ -88,6 +117,11 @@ class _OfficeState extends ConsumerState<Office> {
             final actors = (data['actors'] as List)
                 .cast<Map<String, dynamic>>();
             final selected = rooms.firstWhere((r) => r['id'] == room);
+            final banner =
+                notice ??
+                (ref.watch(officeCoreProvider).hasError
+                    ? 'Rust core unavailable. Rebuild the app; movement and room entry are denied.'
+                    : null);
             return SafeArea(
               child: Row(
                 children: [
@@ -254,11 +288,11 @@ class _OfficeState extends ConsumerState<Office> {
                             ],
                           ),
                         ),
-                        if (notice != null)
+                        if (banner != null)
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 28),
                             child: MaterialBanner(
-                              content: Text(notice!),
+                              content: Text(banner),
                               actions: [
                                 TextButton(
                                   onPressed: () =>
@@ -278,15 +312,8 @@ class _OfficeState extends ConsumerState<Office> {
                                 seed: data,
                                 remote: remote,
                                 actor: actor,
-                                findPath: (start, goal) => Policy().path(
-                                  data,
-                                  actor,
-                                  start,
-                                  goal,
-                                  allowedRooms: connectedActor == null
-                                      ? null
-                                      : (serverRooms ?? []),
-                                ),
+                                findPath: (start, goal) =>
+                                    findPath(start, goal),
                                 onPosition: (p, nextRoom) {
                                   position.value = p;
                                   if (nextRoom != room && mounted) {

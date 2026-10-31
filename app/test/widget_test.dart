@@ -1,10 +1,25 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:monastack/app/monastack_app.dart';
+import 'package:monastack/features/office/data/office_core.dart';
 import 'package:monastack/features/office/world/office_world.dart';
+import 'package:monastack/platform/core_bridge.dart';
 
 void main() {
+  // The bridge completes on real ports, so the core is loaded outside the
+  // widget test's fake clock and injected through the provider.
+  late OfficeCore core;
+  setUpAll(() async {
+    await CoreBridge.ensureInitialized();
+    core = await OfficeCore.load(
+      seedJson: File('assets/seed.v1.json').readAsStringSync(),
+      mapJson: File('assets/map.v1.json').readAsStringSync(),
+    );
+  });
+  tearDownAll(() => core.dispose());
   testWidgets(
     'room navigation follows the native route and denies private rooms',
     (tester) async {
@@ -12,7 +27,12 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       tester.view.physicalSize = const Size(1400, 900);
       addTearDown(tester.view.resetPhysicalSize);
-      await tester.pumpWidget(const ProviderScope(child: Monastack()));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [officeCoreProvider.overrideWith((ref) => core)],
+          child: const Monastack(),
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       for (
@@ -29,7 +49,7 @@ void main() {
       for (var i = 0; i < 5 && world.map == null; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      world.goToRoom('dev');
+      await tester.runAsync(() => world.goToRoom('dev'));
       for (var i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 150));
       }

@@ -37,6 +37,7 @@ dependencies:
   flutter_riverpod: ^3.4.3
   flame: ^1.38.2
   ffi: ^2.2.0
+  flutter_rust_bridge: 2.13.0
   uuid: ^4.6.0
   path_provider: ^2.1.6
 

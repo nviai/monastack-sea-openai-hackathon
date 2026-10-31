@@ -1,12 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:monastack/app/monastack_app.dart';
-import 'package:monastack/platform/core_policy.dart';
+import 'package:monastack/features/office/data/office_core.dart';
 import 'package:monastack/features/office/world/office_world.dart';
 
 void main() {
@@ -29,10 +26,17 @@ void main() {
         tester.binding.scheduleForcedFrame();
         await tester.pump(const Duration(milliseconds: 100));
       }
-      final seed = jsonDecode(
-        await rootBundle.loadString('assets/seed.v1.json'),
-      ) as Map<String, dynamic>;
-      expect(Policy().path(seed, 'an', [2, 2], [8, 2]), isNotNull);
+      final core = await ProviderScope.containerOf(
+        tester.element(find.byType(OfficeWorld)),
+      ).read(officeCoreProvider.future);
+      expect(
+        await core.findPath(
+          actor: 'an',
+          start: const Cell(x: 2, y: 2),
+          goal: const Cell(x: 8, y: 2),
+        ),
+        isNotEmpty,
+      );
       tester
           .widget<ListTile>(find.widgetWithText(ListTile, 'Dev & QA'))
           .onTap!();

@@ -1,12 +1,10 @@
 import 'dart:convert';
-import 'dart:ffi';
-import 'dart:isolate';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:monastack/platform/native_library.dart';
+import 'package:monastack/platform/bridge/api/outbox.dart';
+import 'package:monastack/platform/core_bridge.dart';
 import 'package:monastack/shared/node_request.dart';
 
 /// A task command was durably queued but has not yet been acknowledged.
@@ -24,7 +22,8 @@ class OutboxFailure implements Exception {
   final String code;
 }
 
-/// SQLite work runs in an isolate; task and chat queues use separate files.
+/// SQLite work runs on Rust worker threads through the bridge; task and chat
+/// queues use separate files.
 /// Neither stores tokens or cached project snapshots.
 class TaskOutbox {
   TaskOutbox.forPath(this.actor, this.path);
@@ -53,30 +52,54 @@ class TaskOutbox {
     return queue;
   }
 
-  Future<List<Map<String, dynamic>>> _run(Map<String, dynamic> command) async {
-    final data = jsonEncode({'db_path': path, 'actor': actor, ...command});
-    final lib = nativeLibraryPath();
-    final result = await Isolate.run(() => _callNative(lib, data));
-    final decoded = jsonDecode(result) as Map<String, dynamic>;
-    if (decoded['ok'] != true) {
-      throw OutboxFailure(decoded['error'] as String? ?? 'storage_error');
+  Future<T> _call<T>(Future<T> Function() call) async {
+    try {
+      await CoreBridge.ensureInitialized();
+      return await call();
+    } on CoreError catch (e) {
+      throw OutboxFailure(
+        e.kind == CoreErrorKind.outbox ? e.detail : 'native_error',
+      );
+    } on OutboxFailure {
+      rethrow;
+    } catch (_) {
+      throw const OutboxFailure('native_error');
     }
-    return (decoded['entries'] as List).cast<Map<String, dynamic>>();
   }
 
-  Future<void> enqueue(String route, Map<String, dynamic> body) async {
-    await _run({
-      'action': 'enqueue',
-      'route': route,
-      'op': body['op'],
-      'body': body,
-    });
+  Future<void> enqueue(String route, Map<String, dynamic> body) => _call(
+    () => outboxEnqueue(
+      dbPath: path,
+      actor: actor,
+      op: body['op'] as String? ?? '',
+      route: route,
+      bodyJson: jsonEncode(body),
+    ),
+  );
+
+  Future<List<Map<String, dynamic>>> list() async {
+    final entries = await _call(() => outboxList(dbPath: path, actor: actor));
+    return [
+      for (final e in entries)
+        {
+          'op': e.op,
+          'route': e.route,
+          'body': jsonDecode(e.bodyJson),
+          'state': e.state,
+          'reason': e.reason,
+        },
+    ];
   }
 
-  Future<List<Map<String, dynamic>>> list() => _run({'action': 'list'});
-  Future<void> mark(String op, String state, {String? reason}) async {
-    await _run({'action': 'mark', 'op': op, 'state': state, 'reason': reason});
-  }
+  Future<void> mark(String op, String state, {String? reason}) => _call(
+    () => outboxMark(
+      dbPath: path,
+      actor: actor,
+      op: op,
+      state: state,
+      reason: reason,
+    ),
+  );
 
   static bool supports(String method, String path) {
     if (method != 'POST') return false;
@@ -95,32 +118,6 @@ class TaskOutbox {
         p[1] == 'v1' &&
         p[2] == 'tasks' &&
         const {'transition', 'assign', 'comments'}.contains(p[4]);
-  }
-}
-
-String _callNative(String library, String request) {
-  final lib = DynamicLibrary.open(library);
-  final call = lib
-      .lookupFunction<
-        Pointer<Utf8> Function(Pointer<Utf8>),
-        Pointer<Utf8> Function(Pointer<Utf8>)
-      >('monastack_outbox_v1');
-  final free = lib
-      .lookupFunction<
-        Void Function(Pointer<Utf8>),
-        void Function(Pointer<Utf8>)
-      >('monastack_free_v1');
-  final input = request.toNativeUtf8();
-  try {
-    final result = call(input);
-    if (result == nullptr) throw const OutboxFailure('native_error');
-    try {
-      return result.toDartString();
-    } finally {
-      free(result);
-    }
-  } finally {
-    malloc.free(input);
   }
 }
 
