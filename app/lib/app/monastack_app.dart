@@ -405,6 +405,9 @@ class _OfficeState extends ConsumerState<Office> {
                               borderRadius: BorderRadius.circular(24),
                               child: OfficeWorld(
                                 key: worldKey,
+                                onWorkspaceTools: () => collaborationKey
+                                    .currentState
+                                    ?.openWorkspaceTools(),
                                 seed: data,
                                 remote: remote,
                                 actor: actor,

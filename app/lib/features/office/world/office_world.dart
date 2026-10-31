@@ -39,7 +39,9 @@ class OfficeWorld extends StatefulWidget {
     this.onSelectActor,
     this.speaking,
     this.faces,
+    this.onWorkspaceTools,
   });
+  final VoidCallback? onWorkspaceTools;
   final Map<String, dynamic> seed;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
   final String actor;
@@ -348,11 +350,26 @@ class OfficeWorldState extends State<OfficeWorld> {
             child: FaceLayer(game: _game, faces: widget.faces!),
           ),
         Positioned(
+          left: 10,
           right: 10,
           top: 10,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.onWorkspaceTools != null)
+                TextButton.icon(
+                  onPressed: widget.onWorkspaceTools,
+                  style: TextButton.styleFrom(
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .secondaryContainer,
+                    foregroundColor: Theme.of(context)
+                        .colorScheme
+                        .onSecondaryContainer,
+                  ),
+                  icon: const Icon(Icons.apps, size: 18),
+                  label: const Text('Workspace tools'),
+                ),
+              const Spacer(),
               IconButton.filledTonal(
                 tooltip: systemReduceMotion
                     ? 'Motion reduced by system'

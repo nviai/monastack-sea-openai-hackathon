@@ -78,6 +78,72 @@ class Collaboration extends StatefulWidget {
 }
 
 class CollaborationState extends State<Collaboration> {
+  Future<void> openWorkspaceTools() async {
+    if (identity == null) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => WorkspaceTools(
+        account: auth.signedIn,
+        admin: auth.account?.admin ?? false,
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final Widget target = switch (choice) {
+      'tasks' => TaskBoard(
+        request: taskRequest,
+        actors: widget.actors,
+        queue: queueNotifier,
+        reviewQueue: () {
+          final delivery = taskDelivery;
+          if (delivery != null) {
+            showDialog<void>(
+              context: context,
+              builder: (context) => OutboxReview(delivery: delivery),
+            );
+          }
+        },
+      ),
+      'account' => AccountDialog(request: request, account: auth.account!),
+      'people' => PeopleAdmin(request: request, account: auth.account!),
+      'company' => CompanyAdmin(request: request, account: auth.account!),
+      'agent-chat' => AlertDialog(
+        content: AgentChat(request: request, actors: widget.actors),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+      'agents' => JobQueue(request: request, actors: widget.actors),
+      'room-admin' => RoomMembership(
+        request: request,
+        actors: widget.actors,
+        rooms: widget.rooms,
+      ),
+      'inference' => const LocalInference(),
+      'documents' => DocumentLibrary(request: request, rooms: widget.rooms),
+      'customers' => CustomerDirectory(request: request),
+      'sales' => SalesPipeline(request: request),
+      'contracts' => Contracts(request: request, identity: identity),
+      'bookings' => Bookings(request: request),
+      'support' => SupportCases(request: request),
+      'meetings' => Meetings(
+        request: request,
+        rooms: widget.rooms,
+        identity: identity,
+      ),
+      'whiteboard' => Whiteboard(request: request, rooms: widget.rooms),
+      'expenses' => ExpenseApprovals(request: request, identity: identity),
+      'journals' => JournalEntries(request: request, identity: identity),
+      'payments' => PaymentAuthorizations(request: request, identity: identity),
+      'incidents' => Incidents(request: request, identity: identity),
+      _ => LeaveRequests(request: request, identity: identity),
+    };
+    if (!context.mounted) return;
+    showDialog<void>(context: context, builder: (context) => target);
+  }
+
   void openAgentChat(String agent) {
     if (!auth.active) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -752,92 +818,6 @@ class CollaborationState extends State<Collaboration> {
           style: TextStyle(fontSize: 11, color: Colors.black54),
         ),
       ] else ...[
-        TextButton.icon(
-          onPressed: () async {
-            final choice = await showDialog<String>(
-              context: context,
-              builder: (context) => WorkspaceTools(
-                account: auth.signedIn,
-                admin: auth.account?.admin ?? false,
-              ),
-            );
-            if (choice == null || !mounted) return;
-            final Widget target = switch (choice) {
-              'tasks' => TaskBoard(
-                request: taskRequest,
-                actors: widget.actors,
-                queue: queueNotifier,
-                reviewQueue: () {
-                  final delivery = taskDelivery;
-                  if (delivery != null) {
-                    showDialog<void>(
-                      context: context,
-                      builder: (context) => OutboxReview(delivery: delivery),
-                    );
-                  }
-                },
-              ),
-              'account' => AccountDialog(
-                request: request,
-                account: auth.account!,
-              ),
-              'people' => PeopleAdmin(request: request, account: auth.account!),
-              'company' => CompanyAdmin(
-                request: request,
-                account: auth.account!,
-              ),
-              'agent-chat' => AlertDialog(
-                content: AgentChat(request: request, actors: widget.actors),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-              'agents' => JobQueue(request: request, actors: widget.actors),
-              'room-admin' => RoomMembership(
-                request: request,
-                actors: widget.actors,
-                rooms: widget.rooms,
-              ),
-              'inference' => const LocalInference(),
-              'documents' => DocumentLibrary(
-                request: request,
-                rooms: widget.rooms,
-              ),
-              'customers' => CustomerDirectory(request: request),
-              'sales' => SalesPipeline(request: request),
-              'contracts' => Contracts(request: request, identity: identity),
-              'bookings' => Bookings(request: request),
-              'support' => SupportCases(request: request),
-              'meetings' => Meetings(
-                request: request,
-                rooms: widget.rooms,
-                identity: identity,
-              ),
-              'whiteboard' => Whiteboard(request: request, rooms: widget.rooms),
-              'expenses' => ExpenseApprovals(
-                request: request,
-                identity: identity,
-              ),
-              'journals' => JournalEntries(
-                request: request,
-                identity: identity,
-              ),
-              'payments' => PaymentAuthorizations(
-                request: request,
-                identity: identity,
-              ),
-              'incidents' => Incidents(request: request, identity: identity),
-              _ => LeaveRequests(request: request, identity: identity),
-            };
-            if (!context.mounted) return;
-            showDialog<void>(context: context, builder: (context) => target);
-          },
-          icon: const Icon(Icons.apps, size: 18),
-          label: const Text('Workspace tools'),
-        ),
         if (outboxError != null)
           Text(
             outboxError!,
