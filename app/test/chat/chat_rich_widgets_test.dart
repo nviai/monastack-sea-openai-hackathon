@@ -35,7 +35,7 @@ void main() {
     final controller = await showChat(tester, client);
     await controller.select('lobby');
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit message'));
     await tester.pumpAndSettle();
@@ -55,7 +55,7 @@ void main() {
     client.emit();
     await tester.pumpAndSettle();
     expect(find.text(' · edited'), findsOneWidget);
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Reply'));
     await tester.pumpAndSettle();
@@ -63,12 +63,12 @@ void main() {
     await tester.tap(find.byTooltip('Cancel reply or edit'));
     await tester.pumpAndSettle();
     expect(controller.draft('lobby').reply, isNull);
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('React 👍'));
     await tester.pumpAndSettle();
     expect(client.calls, contains('react:lobby:own:👍'));
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Copy text'));
     await tester.pumpAndSettle();
@@ -76,7 +76,7 @@ void main() {
     await tester.tap(find.byTooltip('Mark as read'));
     await tester.pumpAndSettle();
     expect(client.calls, contains('read:lobby'));
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete message'));
     await tester.pumpAndSettle();
@@ -94,7 +94,7 @@ void main() {
     final controller = await showChat(tester, client);
     await controller.select('lobby');
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Message actions'));
+    await openMessageActions(tester);
     await tester.pumpAndSettle();
     expect(find.text('Edit message'), findsNothing);
     expect(find.text('Delete message'), findsNothing);

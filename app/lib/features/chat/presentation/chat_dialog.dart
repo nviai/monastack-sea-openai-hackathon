@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/nexus_metrics.dart';
+import '../../../shared/nexus_theme.dart';
+import '../../../shared/nexus_tokens.dart';
 import '../application/chat_controller.dart';
 import '../domain/chat_client.dart';
-import 'chat_sidebar.dart';
+import 'chat_atoms.dart';
 import 'chat_main_pane.dart';
 import 'chat_side_pane.dart';
+import 'chat_sidebar.dart';
+import 'chat_title_bar.dart';
 
 class ChatDialog extends ConsumerStatefulWidget {
   const ChatDialog({
@@ -21,7 +26,7 @@ class ChatDialog extends ConsumerStatefulWidget {
 }
 
 class _ChatDialogState extends ConsumerState<ChatDialog> {
-  double width = 1280, height = 760;
+  double width = NxSize.dialogW, height = NxSize.dialogH;
   bool expanded = false, sidebar = false;
   final searchFocus = FocusNode();
   ChatController? observed;
@@ -47,6 +52,21 @@ class _ChatDialogState extends ConsumerState<ChatDialog> {
     });
   }
 
+  Future<void> enableDesktopNotifications(BuildContext context) async {
+    final allowed = await widget.enableNotifications!();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            allowed
+                ? 'Desktop notifications enabled.'
+                : 'Notifications are disabled in system settings.',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(chatControllerProvider);
@@ -55,231 +75,171 @@ class _ChatDialogState extends ConsumerState<ChatDialog> {
       observed = controller..addListener(selectionChanged);
       previousSelection = controller.selected;
     }
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) {
-        final phase = controller.client.phase;
-        final screen = MediaQuery.sizeOf(context);
-        final w =
-            (expanded
-                    ? screen.width - 32
-                    : width.clamp(280, (screen.width - 32).clamp(280, 1600)))
-                .toDouble();
-        final h =
-            (expanded
-                    ? screen.height - 32
-                    : height.clamp(350, (screen.height - 32).clamp(350, 1200)))
-                .toDouble();
-        final wide = w >= 850;
-        return CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-                focusSearch,
-            const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
-                focusSearch,
-            const SingleActivator(LogicalKeyboardKey.keyW, meta: true): () =>
-                Navigator.pop(context),
-          },
-          child: Dialog(
-            insetPadding: const EdgeInsets.all(16),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              width: w,
-              height: h,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
+    return NexusTheme(
+      child: ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) => _frame(context, controller),
+      ),
+    );
+  }
+
+  Widget _frame(BuildContext context, ChatController controller) {
+    final nx = context.nx;
+    final phase = controller.client.phase;
+    final screen = MediaQuery.sizeOf(context);
+    const inset = NxSize.dialogInset * 2;
+    final w =
+        (expanded
+                ? screen.width - inset
+                : width.clamp(
+                    NxSize.dialogMinW,
+                    (screen.width - inset).clamp(
+                      NxSize.dialogMinW,
+                      NxSize.dialogMaxW,
                     ),
-                    child: Row(
-                      children: [
-                        if (!wide)
-                          IconButton(
-                            tooltip: 'Conversations',
-                            onPressed: () => setState(() => sidebar = !sidebar),
-                            icon: const Icon(Icons.menu),
-                          ),
-                        const Icon(Icons.forum_outlined, size: 20),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Chat',
-                            style: TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if (widget.enableNotifications != null)
-                          IconButton(
-                            tooltip: 'Enable desktop notifications',
-                            onPressed: () async {
-                              final allowed =
-                                  await widget.enableNotifications!();
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      allowed
-                                          ? 'Desktop notifications enabled.'
-                                          : 'Notifications are disabled in system settings.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.notifications_outlined),
-                          ),
-                        IconButton(
-                          tooltip: expanded
-                              ? 'Restore dialog size'
-                              : 'Expand chat',
-                          onPressed: () => setState(() => expanded = !expanded),
-                          icon: Icon(
-                            expanded ? Icons.fullscreen_exit : Icons.fullscreen,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Close chat',
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
+                  ))
+            .toDouble();
+    final h =
+        (expanded
+                ? screen.height - inset
+                : height.clamp(
+                    NxSize.dialogMinH,
+                    (screen.height - inset).clamp(
+                      NxSize.dialogMinH,
+                      NxSize.dialogMaxH,
                     ),
+                  ))
+            .toDouble();
+    final wide = w >= NxSize.wide;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyW, meta: true): () =>
+            Navigator.pop(context),
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.all(NxSize.dialogInset),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Column(
+            children: [
+              ChatTitleBar(
+                showMenu: !wide,
+                onMenu: () => setState(() => sidebar = !sidebar),
+                expanded: expanded,
+                onExpand: () => setState(() => expanded = !expanded),
+                onClose: () => Navigator.pop(context),
+                onNotifications: widget.enableNotifications == null
+                    ? null
+                    : () => enableDesktopNotifications(context),
+              ),
+              if (phase == ChatPhase.reconnecting)
+                ChatBanner(
+                  message:
+                      'Connection lost. Reconnecting… Your drafts are kept.',
+                  action: TextButton(
+                    onPressed: controller.client.start,
+                    child: const Text('Retry'),
                   ),
-                  const Divider(height: 1),
-                  if (phase == ChatPhase.reconnecting)
-                    MaterialBanner(
-                      content: const Text(
-                        'Connection lost. Reconnecting… Your drafts are kept.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: controller.client.start,
-                          child: const Text('Retry'),
+                ),
+              if (controller.error != null)
+                ChatBanner(
+                  message: controller.error!,
+                  action: controller.selected == null
+                      ? null
+                      : TextButton(
+                          onPressed: () =>
+                              controller.select(controller.selected!),
+                          child: const Text('Retry conversation'),
                         ),
-                      ],
-                    ),
-                  if (controller.error != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              controller.error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                          ),
-                          if (controller.selected != null)
-                            TextButton(
-                              onPressed: () =>
-                                  controller.select(controller.selected!),
-                              child: const Text('Retry conversation'),
-                            ),
-                        ],
-                      ),
-                    ),
-                  Expanded(
-                    child: switch (phase) {
-                      ChatPhase.loading => const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 12),
-                            Text('Connecting to chat…'),
-                          ],
-                        ),
-                      ),
-                      ChatPhase.unavailable => const Center(
-                        child: Text('Chat is not available on this server'),
-                      ),
-                      ChatPhase.signedOut => const Center(
-                        child: Text('Sign in to use Chat.'),
-                      ),
-                      ChatPhase.error => Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'Chat could not connect. Your drafts are kept.',
-                            ),
-                            TextButton(
-                              onPressed: controller.client.start,
-                              child: const Text('Retry connection'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      ChatPhase.ready || ChatPhase.reconnecting => Row(
-                        children: [
-                          if (wide || sidebar)
-                            SizedBox(
-                              width: wide ? 235 : w - 1,
-                              child: ChatSidebar(
-                                controller: controller,
-                                searchFocus: searchFocus,
-                                currentRoom: widget.currentRoom(),
-                              ),
-                            ),
-                          if (wide || !sidebar)
-                            Expanded(
-                              child:
-                                  controller.pane != SidePane.none && w < 1150
-                                  ? ChatSidePane(controller: controller)
-                                  : ChatMainPane(controller: controller),
-                            ),
-                          if (wide &&
-                              w >= 1150 &&
-                              controller.pane != SidePane.none) ...[
-                            const VerticalDivider(width: 1),
-                            SizedBox(
-                              width: 360,
-                              child: ChatSidePane(controller: controller),
-                            ),
-                          ],
-                        ],
-                      ),
-                    },
-                  ),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: GestureDetector(
-                      onPanUpdate: expanded
-                          ? null
-                          : (details) => setState(() {
-                              width = (w + details.delta.dx).clamp(
-                                600,
-                                screen.width - 32,
-                              );
-                              height = (h + details.delta.dy).clamp(
-                                400,
-                                screen.height - 32,
-                              );
-                            }),
-                      child: const MouseRegion(
-                        cursor: SystemMouseCursors.resizeUpLeftDownRight,
-                        child: Padding(
-                          padding: EdgeInsets.all(3),
-                          child: Icon(Icons.drag_handle, size: 16),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+              Expanded(child: _body(controller, phase, wide, w)),
+              if (!expanded) _resizeHandle(nx, w, h, screen),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _body(
+    ChatController controller,
+    ChatPhase phase,
+    bool wide,
+    double w,
+  ) {
+    final side = controller.pane != SidePane.none;
+    final inline = wide && w >= NxSize.sideInline && side;
+    return switch (phase) {
+      ChatPhase.loading => const ChatNote('Connecting to chat…', spinner: true),
+      ChatPhase.unavailable => const ChatNote(
+        'Chat is not available on this server',
+      ),
+      ChatPhase.signedOut => const ChatNote('Sign in to use Chat.'),
+      ChatPhase.error => ChatNote(
+        'Chat could not connect. Your drafts are kept.',
+        action: TextButton(
+          onPressed: controller.client.start,
+          child: const Text('Retry connection'),
+        ),
+      ),
+      ChatPhase.ready || ChatPhase.reconnecting => Row(
+        children: [
+          if (wide)
+            SizedBox(width: NxSize.sidebar, child: _sidebar(controller, true))
+          else if (sidebar)
+            Expanded(child: _sidebar(controller, false)),
+          if (wide || !sidebar)
+            Expanded(
+              child: side && !inline
+                  ? ChatSidePane(controller: controller)
+                  : ChatMainPane(controller: controller),
+            ),
+          if (inline)
+            SizedBox(
+              width: NxSize.thread,
+              child: ChatSidePane(controller: controller, inline: true),
+            ),
+        ],
+      ),
+    };
+  }
+
+  Widget _sidebar(ChatController controller, bool divider) => ChatSidebar(
+    controller: controller,
+    searchFocus: searchFocus,
+    currentRoom: widget.currentRoom(),
+    divider: divider,
+  );
+
+  Widget _resizeHandle(NexusTokens nx, double w, double h, Size screen) =>
+      Align(
+        alignment: Alignment.bottomRight,
+        child: GestureDetector(
+          onPanUpdate: (details) => setState(() {
+            width = (w + details.delta.dx).clamp(
+              NxSize.resizeMinW,
+              screen.width - NxSize.dialogInset * 2,
+            );
+            height = (h + details.delta.dy).clamp(
+              NxSize.resizeMinH,
+              screen.height - NxSize.dialogInset * 2,
+            );
+          }),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeUpLeftDownRight,
+            child: Padding(
+              padding: const EdgeInsets.all(NxSize.handlePad),
+              child: Icon(
+                Icons.drag_handle,
+                size: NxSize.handleSize,
+                color: nx.ink3,
               ),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
 }

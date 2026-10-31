@@ -78,6 +78,12 @@ flutter:
     - assets/seed.v1.json
     - assets/map.v2.json
     - assets/brand/monastack-logo.png
+    - assets/fonts/inter-4.1/LICENSE.txt
+  fonts:
+    # Inter 4.1 (OFL-1.1), used inside the chat dialog only.
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/inter-4.1/InterVariable.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

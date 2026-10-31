@@ -229,7 +229,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ChatMainPane), findsOneWidget);
     expect(controller.selected, 'lobby');
-    await tester.tap(find.text("Open this room's chat"));
+    await tester.tap(find.text('Open chat'));
     await tester.pumpAndSettle();
     expect(controller.selected, 'eng');
   });

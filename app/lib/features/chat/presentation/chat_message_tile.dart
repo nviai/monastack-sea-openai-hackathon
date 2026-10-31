@@ -1,240 +1,208 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../shared/nexus_metrics.dart';
+import '../../../shared/nexus_tokens.dart';
 import '../application/chat_controller.dart';
 import '../domain/chat_client.dart';
+import 'chat_atoms.dart';
+import 'chat_attachments.dart';
+import 'chat_format.dart';
+import 'chat_message_parts.dart';
+import 'chat_message_toolbar.dart';
 
-class ChatMessageTile extends StatelessWidget {
+export 'chat_attachments.dart' show AttachmentPreview;
+
+class ChatMessageTile extends StatefulWidget {
   const ChatMessageTile({
     super.key,
     required this.message,
     required this.controller,
     this.thread,
+    this.previous,
+    this.gutter = NxSpace.s20,
   });
   final ChatMessage message;
   final ChatController controller;
   final String? thread;
-  Future<void> save(BuildContext context) async {
-    await controller.act(() async {
-      final destination = await getSaveLocation(
-        suggestedName: message.body.split('/').last,
-      );
-      if (destination == null) return;
-      final bytes = await controller.client.download(message);
-      // download checks membership again before returning the bytes.
-      await XFile.fromData(bytes, name: message.body).saveTo(destination.path);
-    });
-  }
+
+  /// The message just above this one, when it can share an avatar.
+  final ChatMessage? previous;
+  final double gutter;
+  @override
+  State<ChatMessageTile> createState() => _ChatMessageTileState();
+}
+
+class _ChatMessageTileState extends State<ChatMessageTile> {
+  bool hovered = false, focused = false, menuOpen = false;
 
   @override
   Widget build(BuildContext context) {
-    final m = message;
+    final nx = context.nx;
+    final m = widget.message;
+    final controller = widget.controller;
+    final grouped = continuesGroup(m, widget.previous);
+    final active = hovered || focused || menuOpen;
     final pending = controller.pending
         .where((p) => p.transaction == m.transactionId)
         .firstOrNull;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 14,
-                child: Text(
-                  m.sender.characters.firstOrNull ?? '?',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  m.sender,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${m.time.hour.toString().padLeft(2, '0')}:${m.time.minute.toString().padLeft(2, '0')}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-              if (m.edited)
-                const Text(' · edited', style: TextStyle(fontSize: 11)),
-              if (m.delivery != Delivery.sent)
-                Text(
-                  m.delivery == Delivery.failed ? ' · not sent' : ' · sending',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: m.delivery == Delivery.failed
-                        ? Theme.of(context).colorScheme.error
-                        : null,
+    final replyTo = m.replyTo == null
+        ? null
+        : controller.client
+                  .messages(m.roomId)
+                  .where((e) => e.id == m.replyTo)
+                  .firstOrNull
+                  ?.sender ??
+              'a message';
+    return MouseRegion(
+      onEnter: (_) => setState(() => hovered = true),
+      onExit: (_) => setState(() => hovered = false),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (value) => setState(() => focused = value),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Stack(
+              children: [
+                Container(
+                  color: active ? nx.messageHover() : null,
+                  padding: EdgeInsets.fromLTRB(
+                    widget.gutter,
+                    grouped ? 0 : NxSpace.s6,
+                    widget.gutter,
+                    NxSpace.s6,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: NxSize.avatar,
+                        child: grouped
+                            ? _Stamp(time: m.time, show: active)
+                            : NexusAvatar(name: m.sender),
+                      ),
+                      const SizedBox(width: NxSpace.s10),
+                      Expanded(
+                        child: _content(
+                          context,
+                          nx,
+                          m,
+                          pending,
+                          grouped,
+                          replyTo,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const Spacer(),
-              if (!m.deleted && m.delivery == Delivery.sent)
-                PopupMenuButton<String>(
-                  tooltip: 'Message actions',
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'copy':
-                        Clipboard.setData(ClipboardData(text: m.body));
-                      case 'reply':
-                        controller.mode(m.roomId, m, root: thread);
-                      case 'thread':
-                        controller.openThread(m);
-                      case 'react':
-                        controller.act(
-                          () => controller.client.react(m.roomId, m.id, '👍'),
-                        );
-                      case 'edit':
-                        controller.mode(m.roomId, m, edit: true, root: thread);
-                      case 'delete':
-                        controller.act(
-                          () => controller.client.redact(m.roomId, m.id),
-                        );
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'copy',
-                      child: Text('Copy text'),
-                    ),
-                    const PopupMenuItem(value: 'reply', child: Text('Reply')),
-                    const PopupMenuItem(
-                      value: 'thread',
-                      child: Text('Open thread'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'react',
-                      child: Text('React 👍'),
-                    ),
-                    if (m.own && m.attachment == null)
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Edit message'),
-                      ),
-                    if (m.canDelete)
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete message'),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-          if (m.replyTo != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                '↳ Reply to ${controller.client.messages(m.roomId).where((e) => e.id == m.replyTo).firstOrNull?.sender ?? 'a message'}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ),
-          if (m.deleted)
-            const Text(
-              'Message deleted',
-              style: TextStyle(fontStyle: FontStyle.italic),
-            )
-          else if (m.attachment != null) ...[
-            if (m.image) AttachmentPreview(message: m, controller: controller),
-            TextButton.icon(
-              onPressed: () => save(context),
-              icon: const Icon(Icons.download_outlined),
-              label: Text(m.body, overflow: TextOverflow.ellipsis),
-            ),
-          ] else
-            MarkdownBody(
-              data: m.body,
-              selectable: true,
-              imageBuilder: (uri, title, alt) => Text(alt ?? 'Image link'),
-              onTapLink: (_, href, _) async {
-                final uri = Uri.tryParse(href ?? '');
-                if (uri != null &&
-                    ['https', 'http', 'mailto'].contains(uri.scheme)) {
-                  await controller.act(() async {
-                    if (!await launchUrl(uri)) {
-                      throw StateError('Link unavailable');
-                    }
-                  });
-                }
-              },
-            ),
-          if (pending?.bytes != null && pending!.delivery == Delivery.sending)
-            LinearProgressIndicator(value: pending.progress),
-          if (m.delivery == Delivery.failed && pending != null)
-            TextButton.icon(
-              onPressed: () => controller.retry(pending),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry send'),
-            ),
-          if (!m.deleted && m.reactions.isNotEmpty)
-            Wrap(
-              spacing: 6,
-              children: [
-                for (final reaction in m.reactions.entries)
-                  ActionChip(
-                    label: Text('${reaction.key} ${reaction.value}'),
-                    onPressed: () => controller.act(
-                      () =>
-                          controller.client.react(m.roomId, m.id, reaction.key),
-                    ),
+                if (!m.deleted && m.delivery == Delivery.sent)
+                  MessageToolbar(
+                    message: m,
+                    controller: controller,
+                    thread: widget.thread,
+                    visible: active,
+                    gutter: widget.gutter,
+                    onMenuOpen: () => setState(() => menuOpen = true),
+                    onMenuClosed: () => setState(() => menuOpen = false),
                   ),
               ],
             ),
-          if (m.readers.isNotEmpty)
-            Text(
-              'Read by ${m.readers.length}',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-        ],
+            if (m.readers.isNotEmpty)
+              SeenRow(readers: m.readers, gutter: widget.gutter),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _flags(NexusTokens nx, ChatMessage m) => Text.rich(
+    TextSpan(
+      children: [
+        if (m.edited) const TextSpan(text: ' · edited'),
+        if (m.delivery == Delivery.sending) const TextSpan(text: ' · sending'),
+      ],
+    ),
+    style: nx.text(NexusTokens.t12, color: nx.ink3),
+  );
+
+  Widget _content(
+    BuildContext context,
+    NexusTokens nx,
+    ChatMessage m,
+    PendingMessage? pending,
+    bool grouped,
+    String? replyTo,
+  ) {
+    final controller = widget.controller;
+    final hasFlags = m.edited || m.delivery == Delivery.sending;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!grouped)
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  m.sender,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nx.text(NexusTokens.t135, weight: NexusTokens.w600),
+                ),
+              ),
+              const SizedBox(width: NxSpace.s6),
+              Text(
+                clock(m.time),
+                style: nx.text(NexusTokens.t12, color: nx.ink3, tabular: true),
+              ),
+              if (hasFlags) _flags(nx, m),
+            ],
+          ),
+        if (replyTo != null) ReplyNote(sender: replyTo),
+        if (m.deleted)
+          const DeletedNote()
+        else if (m.attachment != null) ...[
+          if (m.image) AttachmentPreview(message: m, controller: controller),
+          FileCard(message: m, controller: controller),
+        ] else
+          MessageBody(message: m, controller: controller),
+        if (grouped && hasFlags) _flags(nx, m),
+        if (pending?.bytes != null && pending!.delivery == Delivery.sending)
+          Padding(
+            padding: const EdgeInsets.only(top: NxSpace.s6),
+            child: LinearProgressIndicator(
+              value: pending.progress,
+              minHeight: NxSize.progress,
+            ),
+          ),
+        if (m.delivery == Delivery.failed && pending != null)
+          FailedRow(message: m, onRetry: () => controller.retry(pending)),
+        if (!m.deleted && m.reactions.isNotEmpty)
+          ReactionRow(message: m, controller: controller),
+        if (!m.deleted && widget.thread == null)
+          ThreadLink(message: m, controller: controller),
+      ],
     );
   }
 }
 
-class AttachmentPreview extends StatefulWidget {
-  const AttachmentPreview({
-    super.key,
-    required this.message,
-    required this.controller,
-  });
-  final ChatMessage message;
-  final ChatController controller;
+/// The time shown in the avatar column of a grouped follow-up, on hover.
+class _Stamp extends StatelessWidget {
+  const _Stamp({required this.time, required this.show});
+  final DateTime time;
+  final bool show;
   @override
-  State<AttachmentPreview> createState() => _AttachmentPreviewState();
-}
-
-class _AttachmentPreviewState extends State<AttachmentPreview> {
-  late Future<Uint8List> bytes = widget.controller.client.download(
-    widget.message,
-  );
-  @override
-  Widget build(BuildContext context) => FutureBuilder<Uint8List>(
-    future: bytes,
-    builder: (context, snapshot) {
-      if (snapshot.hasError) {
-        return TextButton(
-          onPressed: () => setState(() {
-            bytes = widget.controller.client.download(widget.message);
-          }),
-          child: const Text('Preview unavailable · Retry'),
-        );
-      }
-      if (!snapshot.hasData) {
-        return const SizedBox(
-          height: 80,
-          child: Center(child: CircularProgressIndicator()),
-        );
-      }
-      return Image.memory(
-        snapshot.data!,
-        height: 160,
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => const Text('Image preview unavailable'),
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final nx = context.nx;
+    return Padding(
+      padding: const EdgeInsets.only(top: NxSpace.s3),
+      child: show
+          ? Text(
+              clock(time),
+              textAlign: TextAlign.right,
+              style: nx.text(NexusTokens.t11, color: nx.ink3, tabular: true),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
 }

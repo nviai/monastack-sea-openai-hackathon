@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/nexus_metrics.dart';
+import '../../../shared/nexus_theme.dart';
+import '../../../shared/nexus_tokens.dart';
 import '../domain/chat_client.dart';
+import 'chat_atoms.dart';
 
 class LegacyHistory extends StatefulWidget {
   const LegacyHistory({
@@ -80,50 +84,90 @@ class _LegacyHistoryState extends State<LegacyHistory> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Earlier messages (before Matrix)'),
-    content: SizedBox(
-      width: 600,
-      height: 460,
-      child: Column(
-        children: [
-          const Text('Read-only history. New messages are sent in Chat.'),
-          if (error != null)
-            Text(
-              error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          if (loading) const LinearProgressIndicator(),
-          Expanded(
-            child: messages.isEmpty
-                ? const Center(child: Text('No earlier messages.'))
-                : ListView(
-                    children: [
-                      for (final message in messages)
-                        ListTile(
-                          title: SelectableText(message['body'] as String),
-                          subtitle: Text(
-                            '${message['sender_name']} · ${message['created']}',
-                          ),
-                        ),
-                    ],
+  Widget build(BuildContext context) {
+    final nx = context.nx;
+    return NexusTheme(
+      child: Builder(
+        builder: (context) => AlertDialog(
+          title: const Text('Earlier messages (before Matrix)'),
+          content: SizedBox(
+            width: NxSize.legacyW,
+            height: NxSize.legacyH,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Read-only history. New messages are sent in Chat.',
+                  style: nx.text(NexusTokens.t125, color: nx.ink2),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: NxSpace.s8),
+                    child: Text(
+                      error!,
+                      style: nx.text(
+                        NexusTokens.t125,
+                        weight: NexusTokens.w560,
+                        color: nx.now,
+                      ),
+                    ),
                   ),
-          ),
-          if (older || error != null)
-            TextButton(
-              onPressed: loading ? null : load,
-              child: Text(
-                error == null ? 'Load older messages' : 'Retry history',
-              ),
+                if (loading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: NxSpace.s8),
+                    child: LinearProgressIndicator(minHeight: NxSize.progress),
+                  ),
+                Expanded(
+                  child: messages.isEmpty
+                      ? const ChatNote('No earlier messages.')
+                      : ListView(
+                          children: [
+                            for (final message in messages)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: NxSpace.s6,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${message['sender_name']} · ${message['created']}',
+                                      style: nx.text(
+                                        NexusTokens.t12,
+                                        color: nx.ink3,
+                                      ),
+                                    ),
+                                    SelectableText(
+                                      message['body'] as String,
+                                      style: nx.text(
+                                        NexusTokens.t14,
+                                        height: NexusTokens.lhBody,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+                if (older || error != null)
+                  TextButton(
+                    onPressed: loading ? null : load,
+                    child: Text(
+                      error == null ? 'Load older messages' : 'Retry history',
+                    ),
+                  ),
+              ],
             ),
-        ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Close'),
-      ),
-    ],
-  );
+    );
+  }
 }

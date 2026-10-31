@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/nexus_metrics.dart';
+import '../../../shared/nexus_tokens.dart';
 import '../application/chat_controller.dart';
+import 'chat_atoms.dart';
+import 'chat_here_card.dart';
+import 'chat_sidebar_rows.dart';
 import 'person_picker.dart';
 
 class ChatSidebar extends StatelessWidget {
@@ -9,12 +14,18 @@ class ChatSidebar extends StatelessWidget {
     required this.controller,
     required this.currentRoom,
     this.searchFocus,
+    this.divider = true,
   });
   final ChatController controller;
   final String currentRoom;
   final FocusNode? searchFocus;
+
+  /// A hairline on the right edge when beside the main pane.
+  final bool divider;
+
   @override
   Widget build(BuildContext context) {
+    final nx = context.nx;
     final client = controller.client;
     final rooms = client.rooms
         .where(
@@ -25,125 +36,141 @@ class ChatSidebar extends StatelessWidget {
           },
         )
         .toList();
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
+    final current = client.rooms
+        .where((r) => r.officeRoom == currentRoom)
+        .firstOrNull;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: NxSpace.s10,
+        vertical: NxSpace.s12,
+      ),
+      decoration: BoxDecoration(
+        color: nx.surface2,
+        border: divider ? Border(right: BorderSide(color: nx.line)) : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _SearchField(controller: controller, focus: searchFocus),
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              key: const Key('chat-search'),
-              focusNode: searchFocus,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                labelText: 'Search all conversations',
-                isDense: true,
-              ),
-              onSubmitted: (value) => controller.search(value),
+            padding: const EdgeInsets.only(
+              top: NxSpace.s10,
+              bottom: NxSpace.s4,
+            ),
+            child: Wrap(
+              spacing: NxSpace.s4,
+              runSpacing: NxSpace.s4,
+              children: [
+                for (final value in ChatFilter.values)
+                  FilterChipButton(
+                    label: switch (value) {
+                      ChatFilter.all => 'All',
+                      ChatFilter.unreads => 'Unreads',
+                      ChatFilter.mentions => 'Mentions',
+                    },
+                    count: switch (value) {
+                      ChatFilter.all => 0,
+                      ChatFilter.unreads =>
+                        client.rooms.where((r) => r.unread > 0).length,
+                      ChatFilter.mentions =>
+                        client.rooms.where((r) => r.mentions > 0).length,
+                    },
+                    selected: controller.filter == value,
+                    onTap: () => controller.setFilter(value),
+                  ),
+              ],
             ),
           ),
-          for (final value in ChatFilter.values)
-            ListTile(
-              dense: true,
-              selected: controller.filter == value,
-              leading: Icon(switch (value) {
-                ChatFilter.all => Icons.forum_outlined,
-                ChatFilter.unreads => Icons.mark_chat_unread_outlined,
-                ChatFilter.mentions => Icons.alternate_email,
-              }),
-              title: Text(switch (value) {
-                ChatFilter.all => 'All conversations',
-                ChatFilter.unreads => 'Unreads',
-                ChatFilter.mentions => 'Mentions',
-              }),
-              onTap: () => controller.setFilter(value),
-            ),
-          TextButton.icon(
-            onPressed: () {
-              final room = client.rooms
-                  .where((r) => r.officeRoom == currentRoom)
-                  .firstOrNull;
-              if (room != null) controller.select(room.id);
-            },
-            icon: const Icon(Icons.near_me_outlined, size: 16),
-            label: const Text("Open this room's chat"),
-          ),
-          const Divider(height: 1),
           Expanded(
             child: ListView(
+              padding: EdgeInsets.zero,
               children: [
                 for (final direct in [false, true]) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            direct ? 'Direct messages' : 'Channels',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        if (direct)
-                          IconButton(
+                  GroupLabel(
+                    label: direct ? 'Direct messages' : 'Channels',
+                    action: direct
+                        ? GhostIconButton(
                             tooltip: 'New direct message',
+                            size: NxSize.ctrlSm,
                             onPressed: () =>
                                 showPersonPicker(context, controller),
-                            icon: const Icon(Icons.add, size: 18),
-                          ),
-                      ],
-                    ),
+                            icon: Icons.add,
+                          )
+                        : null,
                   ),
                   if (!rooms.any((r) => r.direct == direct))
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No conversations'),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: NxSpace.s8,
+                        vertical: NxSpace.s6,
+                      ),
+                      child: Text(
+                        'No conversations',
+                        style: nx.text(NexusTokens.t125, color: nx.ink3),
+                      ),
                     ),
                   for (final room in rooms.where((r) => r.direct == direct))
-                    ListTile(
-                      key: ValueKey('channel-${room.id}'),
-                      dense: true,
-                      selected: controller.selected == room.id,
-                      leading: Icon(
-                        direct
-                            ? Icons.people_outline
-                            : room.restricted
-                            ? Icons.lock_outline
-                            : Icons.tag,
-                        size: 18,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: NxSpace.s2),
+                      child: ChannelRow(
+                        key: ValueKey('channel-${room.id}'),
+                        room: room,
+                        selected: controller.selected == room.id,
+                        onTap: () => controller.select(room.id),
                       ),
-                      title: Text(
-                        room.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: room.topic.isEmpty
-                          ? null
-                          : Text(
-                              room.topic,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                      trailing: room.unread > 0 || room.mentions > 0
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (room.unread > 0)
-                                  Badge(label: Text('${room.unread}')),
-                                if (room.unread > 0 && room.mentions > 0)
-                                  const SizedBox(width: 5),
-                                if (room.mentions > 0)
-                                  Badge(label: Text('@${room.mentions}')),
-                              ],
-                            )
-                          : null,
-                      onTap: () => controller.select(room.id),
                     ),
                 ],
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(top: NxSpace.s8),
+            child: HereCard(
+              roomName: current?.name ?? currentRoom,
+              onOpen: current == null
+                  ? null
+                  : () => controller.select(current.id),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, this.focus});
+  final ChatController controller;
+  final FocusNode? focus;
+  @override
+  Widget build(BuildContext context) {
+    final nx = context.nx;
+    return SizedBox(
+      height: NxSize.search,
+      child: FocusFrame(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: NxSpace.s10),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: NxSize.icon, color: nx.ink3),
+              const SizedBox(width: NxSpace.s8),
+              Expanded(
+                child: TextField(
+                  key: const Key('chat-search'),
+                  focusNode: focus,
+                  maxLines: 1,
+                  style: nx.text(NexusTokens.t135),
+                  cursorColor: nx.accent,
+                  decoration: InputDecoration.collapsed(
+                    hintText: 'Search all conversations',
+                    hintStyle: nx.text(NexusTokens.t135, color: nx.ink3),
+                  ),
+                  onSubmitted: controller.search,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
