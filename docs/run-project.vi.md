@@ -1,5 +1,7 @@
 # Hướng dẫn chạy Monastack từ đầu
 
+Matrix chat cần Synapse + Postgres trên **server**. Dùng `python3 tools/local_office.py start --no-app` để khởi động toàn bộ backend trong Zellij. Xem [Matrix chat operations](matrix-chat-operations.md). Member và app không chạy homeserver riêng.
+
 Client trên máy khác trong LAN: chạy `./tools/start-client.sh` để kết nối server `192.168.224.217`; xem [hướng dẫn client LAN](start-client-lan.vi.md).
 
 Muốn chạy ngay server + node client + app trên máy này với bind `0.0.0.0`: xem [cấu hình local đã thiết lập](local-office.vi.md).
@@ -37,7 +39,7 @@ Cần source repository trên máy và các công cụ:
 - Flutter stable có Dart đáp ứng `app/pubspec.yaml`: Dart `^3.13.5`. Phiên bản đã dùng kiểm tra gần nhất: Flutter `3.47.9`, Dart `3.13.7`.
 - Rust stable và Cargo, có trong `PATH` và tại vị trí mặc định `$HOME/.cargo/bin/cargo` mà script đóng gói app sử dụng.
 - Python 3 nếu dùng lệnh nhập join code bên dưới.
-- Docker Desktop chỉ cần khi bật voice/camera; không cần cho chat văn bản hoặc OpenAI.
+- Docker Desktop chỉ cần khi bật voice/camera; chat văn bản Matrix cần Docker trên server. Client không cần Docker để chat.
 
 Kiểm tra sau khi cài:
 

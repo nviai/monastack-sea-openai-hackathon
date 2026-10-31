@@ -46,3 +46,7 @@ Máy client phải truy cập được các cổng trong bảng trên. Cấu hì
 Control API của LiveKit vẫn được node server gọi nội bộ qua `127.0.0.1:7880`; key media không gửi cho client.
 
 Khi IP server thay đổi, cập nhật file trên, dừng rồi chạy lại `tools/local_office.py`, và truyền IP mới cho `start-client.sh --host ...`. Có thể override địa chỉ server bằng biến `MONASTACK_SERVER_HOST` khi chạy local_office.py. Chỉ app sử dụng `MONASTACK_NODE_HOST`; master/member enrollment vẫn giữ cơ chế loopback/SSH hiện có.
+
+## Matrix chat
+
+App lấy địa chỉ Matrix từ `GET /v1/chat/config` qua node hiện tại. Server cần quảng bá `MONASTACK_MATRIX_PUBLIC_URL=http://<IP-LAN-server>:8008` và mở cổng 8008 cho client. Client không cần container hoặc thông tin admin. Không mở cổng 8009 ra LAN. Xem [Matrix chat operations](matrix-chat-operations.md).

@@ -1,6 +1,6 @@
 # Chạy server + node client + app trên cùng máy
 
-Cấu hình đã được thiết lập tại workspace hiện tại. Các tiến trình chạy nền sau khi lệnh kết thúc, không tự chạy lại sau khi reboot.
+Cấu hình đã được thiết lập tại workspace hiện tại. Các dịch vụ chạy trong session Zellij `monastack-matrix-server` để xem log trực tiếp. Xem [Matrix chat operations](matrix-chat-operations.md).
 
 | Thành phần | Bind | App/tiến trình local kết nối qua |
 | --- | --- | --- |
@@ -8,6 +8,9 @@ Cấu hình đã được thiết lập tại workspace hiện tại. Các tiế
 | Realtime server | `0.0.0.0:47831` | `http://127.0.0.1:47831` |
 | Node client (member đã join master) | `0.0.0.0:47840` | `http://127.0.0.1:47840` |
 | LiveKit server | `0.0.0.0:7880` (signal), `7881/TCP`, `7882/UDP` | `ws://127.0.0.1:7880` |
+| Matrix client gateway | `0.0.0.0:8008` | `http://127.0.0.1:8008` |
+| Synapse upstream/admin | `127.0.0.1:8009` | backend only |
+| Postgres Matrix | Không publish port | Synapse only |
 | App macOS | Không có cổng server riêng | Node client `127.0.0.1:47840` |
 
 `MONASTACK_BIND_HOST=0.0.0.0` điều khiển địa chỉ lắng nghe của API và realtime; mặc định khi không đặt vẫn là `127.0.0.1`. Server hiện quảng bá IP LAN theo `runtime/server-address.json` cho realtime và media; xem [script client LAN](start-client-lan.vi.md). Master/member ở cùng máy dùng loopback để trao đổi tài khoản. App có thể kết nối server LAN bằng `MONASTACK_NODE_HOST`; script local vẫn dùng node client trên máy này.
@@ -20,7 +23,7 @@ python3 tools/local_office.py start
 python3 tools/local_office.py stop
 ```
 
-`start` bật một LiveKit dùng chung, node server, node client và app. Node server là nơi duy nhất quản lý phòng media và presence; node client mặc định chuyển tiếp toàn bộ office request về server. `stop` dừng cả app, hai node và LiveKit.
+`start` bật Synapse + Postgres + Matrix gateway, một LiveKit dùng chung, node server, node client và app. Node server là nơi duy nhất quản lý phòng media và presence; node client mặc định chuyển tiếp toàn bộ office request về server. `stop` dừng cả app, hai node, Matrix gateway, Synapse, Postgres và LiveKit.
 
 `start` dùng lại tiến trình do script quản lý nếu còn chạy. Nếu cổng bị tiến trình khác chiếm, script dừng thao tác và giữ nguyên tiến trình đó. `stop` giữ database và cấu hình để lần sau tiếp tục dùng. Chỉ chạy hai node, chưa mở app:
 
@@ -49,9 +52,8 @@ runtime/db/server-office.sqlite3   # tài khoản master và records của serve
 runtime/db/client-office.sqlite3   # member directory và records của client
 runtime/media/server/livekit.yaml  # config mount của LiveKit server
 runtime/media/server/media.key
-runtime/logs/server.log
-runtime/logs/client.log
-runtime/logs/app.log
+runtime/matrix/                   # config, secrets, Postgres và media Matrix
+# Log: zellij attach monastack-matrix-server
 runtime/pids/server.pid
 runtime/pids/client.pid
 runtime/pids/app.pid

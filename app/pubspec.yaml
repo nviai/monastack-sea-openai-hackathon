@@ -42,6 +42,14 @@ dependencies:
   uuid: ^4.6.0
   path_provider: ^2.1.6
   flutter_secure_storage: ^11.2.0
+  matrix: 14.2.0
+  flutter_local_notifications: 22.3.3
+  file_selector: 1.1.0
+  url_launcher: 6.3.2
+  flutter_markdown_plus: 1.0.12
+  sqflite_common_ffi: 2.4.5
+  mime: 2.1.0
+  http: 1.6.0
 
 dev_dependencies:
   flutter_test:

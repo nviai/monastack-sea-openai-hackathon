@@ -104,9 +104,6 @@ class TaskOutbox {
   static bool supports(String method, String path) {
     if (method != 'POST') return false;
     final p = path.split('/');
-    if (p.length == 4 && p[1] == 'v1' && p[2] == 'messages') {
-      return RegExp(r'^(room|dm)%3A[A-Za-z0-9_-]{1,80}$').hasMatch(p[3]);
-    }
     if (p.length == 3 && p[1] == 'v1' && p[2] == 'projects') return true;
     if (p.length == 5 &&
         p[1] == 'v1' &&
@@ -164,6 +161,15 @@ class TaskDelivery {
       if (item['state'] == 'rejected') break;
       if (item['state'] != 'pending') continue;
       final op = item['op'] as String;
+      if ((item['route'] as String).startsWith('/v1/messages/')) {
+        // Never replay pre-Matrix chat, even if a queue is opened accidentally.
+        await outbox.mark(
+          op,
+          'rejected',
+          reason: 'Not sent; copy text into Chat.',
+        );
+        break;
+      }
       try {
         await network('POST', item['route'] as String, item['body']);
         await outbox.mark(op, 'delivered');
@@ -190,6 +196,9 @@ class TaskDelivery {
   }
 
   Future<dynamic> request(String method, String path, [Object? body]) async {
+    if (path.startsWith('/v1/messages/')) {
+      throw const OutboxFailure('legacy_chat_read_only');
+    }
     if (!TaskOutbox.supports(method, path)) return network(method, path, body);
     if (!active()) throw const OutboxFailure('not_connected');
     if (body is! Map<String, dynamic> || body['op'] is! String) {

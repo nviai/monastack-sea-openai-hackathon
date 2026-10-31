@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-room-admin-') as directory:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     tokens = {actor: secrets.token_hex(32) for actor in ('an', 'van')}
-    env = {**os.environ, 'MONASTACK_DB': str(db), 'MONASTACK_NODE_PORT': str(port)}
+    env = {**os.environ, 'MONASTACK_DB': str(db), 'MONASTACK_NODE_PORT': str(port), 'MONASTACK_SEED_COMPANY':'0'}
     for actor, token in tokens.items():
         subprocess.run([str(node), 'enroll', actor], env=env, input=token, text=True, check=True)
     server = subprocess.Popen([str(node)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-room-admin-') as directory:
         assert request('van', 'GET', 'room-admin/capabilities')[1]['can_manage'] is False
         assert request('van', 'GET', 'room-admin/finance/members')[0] == 403
         assert request('an', 'GET', 'room-admin/lobby/members')[0] == 404
-        assert request('an', 'GET', 'messages/room%3Afinance')[0] == 403
+        assert request('an', 'GET', 'chat/legacy/room%3Afinance')[0] == 403
         assert request('an', 'GET', 'room-admin/finance/members')[1]['version'] == 0
         command = {'actor': 'an', 'action': 'grant', 'op': secrets.token_hex(16), 'expected_version': 0}
         assert request('van', 'POST', 'room-admin/finance/members', command)[0] == 403
@@ -57,9 +57,9 @@ with tempfile.TemporaryDirectory(prefix='monastack-room-admin-') as directory:
         assert request('an', 'POST', 'room-admin/finance/members', dict(command, action='revoke'))[0] == 409
         assert request('an', 'POST', 'room-admin/finance/members', dict(command, op=secrets.token_hex(16), expected_version=1))[0] == 409
         assert request('an', 'POST', 'room-admin/finance/members', {'actor':'mona','action':'grant','op':secrets.token_hex(16),'expected_version':1})[0] == 404
-        assert request('an', 'GET', 'messages/room%3Afinance')[0] == 200
+        assert request('an', 'GET', 'chat/legacy/room%3Afinance')[0] == 200
         subprocess.run([str(node), 'room', 'revoke', 'finance', 'an'], env=env, check=True)
-        assert request('an', 'GET', 'messages/room%3Afinance')[0] == 403
+        assert request('an', 'GET', 'chat/legacy/room%3Afinance')[0] == 403
         assert request('an', 'GET', 'room-admin/finance/members')[1]['version'] == 2
         assert request('an', 'POST', 'room-admin/finance/members', dict(command, op=secrets.token_hex(16)))[0] == 409
         history = request('an', 'GET', 'room-admin/finance/history')[1]

@@ -6,6 +6,7 @@ const _groups = <(String, List<_Tool>)>[
   (
     'Work',
     [
+      (id: 'chat', label: 'Chat', icon: Icons.forum_outlined),
       (id: 'tasks', label: 'Open task board', icon: Icons.view_kanban_outlined),
       (id: 'agent-chat', label: 'Chat with agents', icon: Icons.chat_outlined),
       (id: 'agents', label: 'Agent proposals', icon: Icons.smart_toy_outlined),
@@ -91,11 +92,17 @@ const _adminTools = <_Tool>[
 /// Grouped launcher for workspace views. Returns the chosen tool ID.
 /// Every view authorizes its own requests against the node.
 class WorkspaceTools extends StatelessWidget {
-  const WorkspaceTools({super.key, this.account = false, this.admin = false});
+  const WorkspaceTools({
+    super.key,
+    this.account = false,
+    this.admin = false,
+    this.chatUnread = 0,
+  });
 
   /// Signed in with an account (not a device token), and as an admin.
   final bool account;
   final bool admin;
+  final int chatUnread;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -139,7 +146,11 @@ class WorkspaceTools extends StatelessWidget {
                           ),
                         ),
                         onPressed: () => Navigator.pop(context, tool.id),
-                        icon: Icon(tool.icon, size: 18),
+                        icon: Badge(
+                          isLabelVisible: tool.id == 'chat' && chatUnread > 0,
+                          label: Text('$chatUnread'),
+                          child: Icon(tool.icon, size: 18),
+                        ),
                         label: Text(
                           tool.label,
                           overflow: TextOverflow.ellipsis,

@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:monastack/features/sync/task_outbox.dart';
 
 class OutboxReview extends StatefulWidget {
-  const OutboxReview({super.key, required this.delivery, this.chat = false});
+  const OutboxReview({super.key, required this.delivery});
   final TaskDelivery delivery;
-  final bool chat;
   @override
   State<OutboxReview> createState() => _OutboxReviewState();
 }
@@ -37,11 +36,7 @@ class _OutboxReviewState extends State<OutboxReview> {
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          widget.chat
-              ? 'Discard this queued message?'
-              : 'Discard this task change?',
-        ),
+        title: const Text('Discard this task change?'),
         content: const Text(
           'It will not be retried. It may already have reached the node; refresh before retrying. A local history record remains on this device.',
         ),
@@ -69,17 +64,15 @@ class _OutboxReviewState extends State<OutboxReview> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.chat ? 'Queued messages' : 'Task changes'),
+    title: const Text('Task changes'),
     content: SizedBox(
       width: 520,
       height: 350,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.chat
-                ? 'Messages are stored unencrypted on this device and retry in order. A rejection pauses later messages until discarded.'
-                : 'Pending changes retry in order when connected. A rejection pauses later changes until it is discarded; refresh before recreating it.',
+          const Text(
+            'Pending changes retry in order when connected. A rejection pauses later changes until it is discarded; refresh before recreating it.',
           ),
           if (error != null)
             Text(error!, style: const TextStyle(color: Colors.red)),
