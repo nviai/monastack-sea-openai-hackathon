@@ -16,9 +16,8 @@ def main():
       (3,1,'Organize your work into projects. Explore Meslingo, Vibe KOL, and Omit X, with clear cards for every project.'),
       (3,15,'Follow each task from to do, through work in progress, to done.'),
       (4,1,'Choose Atlas, the software engineer, and propose an onboarding review. The assignment remains pending for human approval.'),
-      (5,1,'Ask your agent to open the task board. The agent can operate the workspace interface.'),
-      (6,.4,'Notifications keep requests and updates in one place.'),
-      (7,.8,'Room chat keeps the conversation connected to your team. This is the live Dev and QA conversation.'),
+      (5,.4,'Notifications keep requests and updates in one place.'),
+      (6,.8,'Room chat keeps the conversation connected to your team. This is the live Dev and QA conversation.'),
     ]
     speech=folder/'narration';speech.mkdir(exist_ok=True)
     clips=[];captions=[]
@@ -50,7 +49,7 @@ def main():
     highlights=[(0,1,5,(.53,.28,.32,.48)),(1,2,5,(.82,.04,.17,.88)),
       (2,2,6,(.01,.28,.13,.10)),(3,2,10,(.15,.21,.70,.18)),
       (3,16,24,(.15,.46,.70,.42)),(4,3,9,(.31,.31,.38,.17)),
-      (5,5,9,(.31,.67,.38,.08)),(7,2,8,(.15,.18,.70,.67))]
+      (6,2,8,(.15,.18,.70,.67))]
     for chapter,a,b,(x,y,w,h) in highlights:
         video.append(f"drawbox=x={220+x*1480}:y={60+y*928}:w={w*1480}:h={h*928}:color=0xc89852@0.9:t=4:enable='between(t,{starts[chapter]+a},{min(starts[chapter]+b,starts[chapter+1])})'")
     for path,start,end in captions:
@@ -58,6 +57,6 @@ def main():
         video.append(f"drawtext=fontfile='{font}':textfile='{path}':fontcolor=white:fontsize=22:line_spacing=5:x=244:y=1007:enable='between(t,{start},{end})'")
     filters='[0:v]'+','.join(video)+'[v];[1:a]asplit[narr][side];[0:a][side]sidechaincompress=threshold=0.025:ratio=6:attack=10:release=250[bed];[bed][narr]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]'
     script=folder/'edit-filter.txt';script.write_text(filters)
-    run(['ffmpeg','-hide_banner','-loglevel','warning','-y','-i',str(raw),'-i',str(folder/'narration.wav'),'-filter_complex_script',str(script),'-map','[v]','-map','[a]','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ar','48000','-movflags','+faststart',str(folder/'monastack-demo-narrated.mp4')])
+    run(['ffmpeg','-hide_banner','-loglevel','warning','-y','-i',str(raw),'-i',str(folder/'narration.wav'),'-filter_complex_script',str(script),'-map','[v]','-map','[a]','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-ar','48000','-movflags','+faststart',str(folder/'monastack-demo-narrated.mp4')])
     print(folder/'monastack-demo-narrated.mp4')
 if __name__=='__main__': main()

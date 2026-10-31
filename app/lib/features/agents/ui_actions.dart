@@ -154,7 +154,11 @@ class UiActions {
         }
         return;
       }
-      if (w is DropdownButton<dynamic> && w.onChanged != null) {
+      if (w is DropdownButton<dynamic>) {
+        // Preserve the callback's actual parameter type (e.g. String?).
+        // Reading it as ValueChanged<dynamic> introduces an invalid cast.
+        final Function? onChanged = (w as dynamic).onChanged as Function?;
+        if (onChanged == null) return;
         for (final item in w.items ?? <DropdownMenuItem<dynamic>>[]) {
           if (!item.enabled) continue;
           final text = item.child is Text
@@ -164,7 +168,7 @@ class UiActions {
             e,
             'Select $text',
             'click',
-            (_) => w.onChanged!(item.value),
+            (_) => Function.apply(onChanged, [item.value]),
             item.value.toString(),
           );
         }

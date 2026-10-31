@@ -3,11 +3,13 @@
 The opt-in Flutter integration target performs real UI actions against the local
 workspace. It signs in as `pha.le`, visits Lobby and Dev & QA for actual live-agent
 greetings, tours the three sample projects, proposes a clearly labeled demo task
-to Atlas, asks Atlas to open the task board, then shows notifications and chat.
+to Atlas, then shows notifications and connected room chat. The LLM chat segment
+is omitted from this shortened walkthrough.
 The proposal is left pending; the demo does not claim code execution or completion.
 
 The recorder uses macOS ScreenCaptureKit to capture only the app window and its
-playback audio. It does not record the microphone. Audio is the actual live agent,
+playback audio, then encodes video and muxes audio with FFmpeg. It does not record
+the microphone. Audio is the actual live agent,
 not a prerecorded replacement. No Accessibility permission is required.
 
 Requirements: macOS 15+, Xcode/Swift, Flutter, running local office services,

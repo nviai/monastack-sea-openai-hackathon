@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:monastack/app/monastack_app.dart';
 import 'package:monastack/features/chat/domain/chat_client.dart';
+import 'package:monastack/features/office/voice/voice_controller.dart';
 import 'package:monastack/features/office/communication/collaboration.dart';
 import 'package:monastack/features/office/world/office_world.dart';
 
@@ -94,7 +95,9 @@ void main() {
     );
     mark('Lobby — live agent greeting');
     await until(
-      () => (collaboration.liveAgent?['captions'] as List? ?? []).isNotEmpty,
+      () =>
+          collaboration.voice?.value.phase == VoicePhase.joined &&
+          (collaboration.liveAgent?['captions'] as List? ?? []).isNotEmpty,
       'Lobby voice greeting',
       seconds: 45,
     );
@@ -104,6 +107,8 @@ void main() {
     await until(
       () =>
           collaboration.widget.room == 'dev' &&
+          collaboration.voice?.value.phase == VoicePhase.joined &&
+          collaboration.voice?.value.room == 'dev' &&
           (collaboration.liveAgent?['captions'] as List? ?? []).isNotEmpty,
       'Dev voice greeting',
       seconds: 45,
@@ -148,39 +153,6 @@ void main() {
     }
     Navigator.of(collaboration.context).pop();
     await wait(1);
-    mark('Ask an agent to open the task board');
-    collaboration.openAgentChat('dev-agent');
-    await until(
-      () => field('Message this agent…').evaluate().isNotEmpty,
-      'agent chat',
-    );
-    await wait(3);
-    await tester.enterText(
-      field('Message this agent…'),
-      'Open the task board for me, please.',
-    );
-    await wait(3);
-    await tap(find.byTooltip('Send'));
-    await until(
-      () => find.text('Meslingo').evaluate().isNotEmpty,
-      'agent opens board',
-      seconds: 65,
-    );
-    await wait(8);
-    if (!Navigator.of(collaboration.context).canPop()) {
-      throw StateError('Expected an open demo panel');
-    }
-    Navigator.of(collaboration.context).pop();
-    await wait(1);
-    // Close the originating agent chat after viewing the opened board.
-    await wait(2);
-    if (find.byTooltip('Close').evaluate().isNotEmpty) {
-      if (!Navigator.of(collaboration.context).canPop()) {
-        throw StateError('Expected an open demo panel');
-      }
-      Navigator.of(collaboration.context).pop();
-      await wait(1);
-    }
     mark('Notifications');
     unawaited(collaboration.openTool('notifications'));
     await wait(6);

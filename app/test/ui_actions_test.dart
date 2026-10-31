@@ -3,6 +3,44 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:monastack/features/agents/ui_actions.dart';
 
 void main() {
+  testWidgets('typed dropdown callbacks can be discovered and invoked', (
+    tester,
+  ) async {
+    late BuildContext root;
+    String? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            root = context;
+            return Scaffold(
+              body: DropdownButton<String>(
+                value: 'a',
+                items: const [
+                  DropdownMenuItem(value: 'a', child: Text('Alpha')),
+                  DropdownMenuItem(value: 'b', child: Text('Beta')),
+                ],
+                onChanged: (value) => selected = value,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    final ui = UiActions(
+      root: () => root,
+      active: () => true,
+      navigate: (_) {},
+    );
+    final control = ui.snapshot().singleWhere(
+      (c) => c['label'] == 'Select Beta',
+    );
+    final action = ui.execute({'id': control['id'], 'value': ''});
+    await tester.pump(const Duration(milliseconds: 350));
+    await action;
+    expect(selected, 'b');
+  });
+
   testWidgets(
     'controls fill fields and click, excluding passwords and disabled buttons',
     (tester) async {

@@ -256,6 +256,7 @@ class _AgentChatState extends State<AgentChat> {
       });
       followTail();
     } on NodeFailure catch (e) {
+      debugPrint('Agent chat HTTP failure: ${e.status}');
       if (mounted && run == generation) {
         setState(
           () => error = switch (e.status) {
@@ -268,7 +269,8 @@ class _AgentChatState extends State<AgentChat> {
           },
         );
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Agent chat transport failure: ${e.runtimeType}');
       if (mounted && run == generation) {
         setState(
           () => error = operated

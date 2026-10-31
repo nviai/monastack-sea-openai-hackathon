@@ -117,7 +117,10 @@ def running(name):
     pid = int(file.read_text().strip())
     command = subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True).stdout
     expected = str(ROOT/'backend/live-agent/worker.py' if name == 'voice-worker' else ROOT/'tools/matrix_proxy.py' if name == 'matrix-gateway' else APP if name in ('app', 'lan-client') else NODE)
-    return pid if expected in command else None
+    candidates = [expected]
+    if name in ('app', 'lan-client'):
+        candidates.extend(str(ROOT/f'app/build/macos/Build/Products/{mode}/monastack.app/Contents/MacOS/monastack') for mode in ('Debug', 'Release'))
+    return pid if any(path in command for path in candidates) else None
 
 def spawn(name, command, env):
     if running(name):
