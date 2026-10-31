@@ -75,7 +75,7 @@ impl Bridge {
                     self.call(Method::POST, "/_matrix/client/v3/createRoom", json!({
                         "room_alias_name":alias,"name":name,"topic":topic,"visibility":"private",
                         "creation_content":{"m.federate":false},
-                        "power_level_content_override":{"users":{self.admin_user.clone():100},"users_default":0,"events_default":0,"state_default":100,"invite":100,"kick":100,"ban":100,"redact":100},
+                        "power_level_content_override":{"users_default":0,"events_default":0,"state_default":100,"invite":100,"kick":100,"ban":100,"redact":100},
                         "initial_state":[
                             {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
                             {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":if restricted || dm {"joined"} else {"shared"}}},
@@ -99,7 +99,7 @@ impl Bridge {
                 room
             }
         };
-        let content = json!([name, topic, restricted, dm]).to_string();
+        let content = json!([name, topic, restricted, dm, 2]).to_string();
         let applied: Option<String> = db
             .lock()
             .unwrap()
@@ -114,8 +114,28 @@ impl Bridge {
             Self::done(db, &op)?;
             return Ok(room);
         }
+        // Room v12 gives its creator implicit power and forbids listing that
+        // creator in content.users. Older rooms need the explicit admin grant.
+        let creation = self
+            .call(
+                Method::GET,
+                &format!(
+                    "/_matrix/client/v3/rooms/{}/state/m.room.create/",
+                    segment(&room)
+                ),
+                json!({}),
+            )
+            .await?;
+        let version = creation["room_version"].as_str().unwrap_or("1");
+        let users = if version.parse::<u32>().unwrap_or(12) >= 12 {
+            json!({})
+        } else {
+            json!({self.admin_user.clone():100})
+        };
+        let power = json!({"users":users,"users_default":0,"events_default":0,"state_default":100,"invite":100,"kick":100,"ban":100,"redact":100});
         // State updates are idempotent. Names/topics can change without new rooms.
         for (event, content) in [
+            ("m.room.power_levels", power),
             ("m.room.name", json!({"name":name})),
             ("m.room.topic", json!({"topic":topic})),
             ("m.room.join_rules", json!({"join_rule":"invite"})),

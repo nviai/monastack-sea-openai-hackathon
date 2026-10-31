@@ -190,6 +190,9 @@ if __name__=='__main__':
         channels={actor:{r['office_room']:r for r in node(actor,'GET','chat/rooms')[1]} for actor in ('an','van')}
         lobby=channels['an']['lobby']['matrix_room_id']; finance=channels['van']['finance']['matrix_room_id']
         expect(lobby==channels['van']['lobby']['matrix_room_id'] and lobby!=finance,'shared stable distinct room mappings')
+        power=mx('van','GET',room_path(finance,'state/m.room.power_levels'))[1]
+        expect(all(power[key]==100 for key in ('invite','kick','ban','redact','state_default')),'node-owned room power levels enforced on Synapse 1.164.1')
+        expect(request(8009,'POST','/_matrix/client/v3/'+room_path(finance,'invite'),{'user_id':users['an']},MATRIX_TOKENS['van'])[0]==403,'ordinary room members cannot invite an outsider')
         expect('finance' not in channels['an'] and channels['van']['finance']['restricted'],'explicit finance access only')
         encoded_finance=urllib.parse.quote(finance,safe='')
         unstable='/_matrix/client/unstable/org.matrix.msc3030/rooms/'+encoded_finance+'/timestamp_to_event?ts=0&dir=b'
@@ -283,6 +286,7 @@ if __name__=='__main__':
         expect(any(e.get('event_id')==lobby_event['event_id'] for e in mx('an','GET',room_path(lobby,'messages?dir=b'))[1]['chunk']),'node and Synapse restart preserve history')
         expect(node('an','POST','chat/session',{'device_name':'Restart'})[1]['user_id']==users['an'],'restart preserves actor mapping')
         expect(node('van','POST','chat/dms',{'actors':['an']})[1]['matrix_room_id']==dm['matrix_room_id'],'restart preserves DM mapping')
+        expect(len(list((RUNTIME/'backups').glob('before-matrix-*.sqlite3')))==1,'node alone checkpoints exactly one pre-Matrix backup')
         with sqlite3.connect(database) as conn:
             expect(counts==[conn.execute('SELECT COUNT(*) FROM '+table).fetchone()[0] for table in ('matrix_users','matrix_rooms','matrix_dms')],'restart creates no duplicate maps')
             expect(mapping==conn.execute('SELECT office_room,room_id FROM matrix_rooms ORDER BY office_room').fetchall(),'all mappings stable')

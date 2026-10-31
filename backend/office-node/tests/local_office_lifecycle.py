@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -66,6 +67,7 @@ if __name__ == '__main__':
                 env={**BASE,'PATH':bin_path+':/usr/bin:/bin:/usr/sbin:/sbin'}
                 assert bool(shutil.which('zellij',path=env['PATH'])) == zellij
                 assert bool(shutil.which('docker',path=env['PATH'])) == matrix
+                started=time.time()
                 cli('start',env,log,no_matrix=not matrix)
                 token=token_for_an()
                 assert request('/v1/workspace')['role']=='master'
@@ -75,7 +77,8 @@ if __name__ == '__main__':
                 assert pids=={name:(RUNTIME/'pids'/f'{name}.pid').read_text() for name in ('server','client')},'repeat start duplicated nodes'
                 cli('status',env,log,no_matrix=not matrix)
                 if not zellij:
-                    assert all((RUNTIME/'logs'/f'{name}.log').is_file() for name in ('server','client'))
+                    assert all((RUNTIME/'logs'/f'{name}.log').stat().st_mtime>=started for name in ('server','client'))
+                    assert all('office node listening' in (RUNTIME/'logs'/f'{name}.log').read_text() for name in ('server','client'))
                 cli('stop',env,log,no_matrix=not matrix)
                 ports_closed()
             print('PASS '+label,flush=True)
