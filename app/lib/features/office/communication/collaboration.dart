@@ -13,6 +13,11 @@ import 'package:monastack/features/finance/expense_approvals.dart';
 import 'package:monastack/features/customers/customer_directory.dart';
 import 'package:monastack/features/customers/contracts.dart';
 import 'package:monastack/features/customers/bookings.dart';
+import 'package:monastack/features/identity/account_dialogs.dart';
+import 'package:monastack/features/identity/auth_api.dart';
+import 'package:monastack/features/identity/auth_session.dart';
+import 'package:monastack/features/identity/credential_store.dart';
+import 'package:monastack/features/identity/sign_in_panel.dart';
 import 'package:monastack/features/office/communication/chat_history.dart';
 import 'package:monastack/features/office/presence/realtime_session.dart';
 import 'package:monastack/features/office/voice/camera_faces.dart';
@@ -45,6 +50,8 @@ class Collaboration extends StatefulWidget {
     required this.onPermissions,
     this.speaking,
     this.faces,
+    this.company = '',
+    this.onWorkspaceName,
   });
   final String room;
   final ValueNotifier<List<int>> position;
@@ -59,12 +66,25 @@ class Collaboration extends StatefulWidget {
 
   /// Receives live camera views by actor, which replace avatar faces.
   final ValueNotifier<Map<String, Widget>>? faces;
+
+  /// Suggested company name for setting up a new node.
+  final String company;
+
+  /// Receives the signed-in workspace's name, or `null` when signed out.
+  final void Function(String?)? onWorkspaceName;
   @override
   State<Collaboration> createState() => _CollaborationState();
 }
 
 class _CollaborationState extends State<Collaboration> {
   final token = TextEditingController();
+  late final AuthSession auth = AuthSession(
+    api: AuthApi(port: _nodePort()),
+    store: Platform.environment['MONASTACK_CREDENTIAL_STORE'] == 'memory'
+        ? MemoryCredentialStore()
+        : KeychainCredentialStore(),
+  );
+  bool connecting = false;
   final draft = TextEditingController();
   final messageScroll = ScrollController();
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
@@ -115,8 +135,27 @@ class _CollaborationState extends State<Collaboration> {
     return port;
   }
 
-  Future<dynamic> request(String method, String path, [Object? body]) =>
-      _requestWithCredential(method, path, body, token.text.trim());
+  /// Sends an authenticated request. A signed-in session renews its access
+  /// token once if the node reports it expired.
+  Future<dynamic> request(String method, String path, [Object? body]) async {
+    if (!auth.active) throw const NodeFailure(401);
+    try {
+      return await _requestWithCredential(
+        method,
+        path,
+        body,
+        await auth.bearer(),
+      );
+    } on NodeFailure catch (e) {
+      if (e.status != 401 || !auth.signedIn || !await auth.refreshNow()) {
+        rethrow;
+      }
+      return _requestWithCredential(method, path, body, await auth.bearer());
+    } on StateError {
+      throw const NodeFailure(401);
+    }
+  }
+
   Future<dynamic> _requestWithCredential(
     String method,
     String path,
@@ -140,18 +179,33 @@ class _CollaborationState extends State<Collaboration> {
     return text.isEmpty ? null : jsonDecode(text);
   }
 
+  /// Signs in or out of collaboration as the session changes.
+  void _authChanged() {
+    if (!mounted) return;
+    widget.onWorkspaceName?.call(auth.account?.workspaceName);
+    if (auth.active && identity == null && !connecting) {
+      connect();
+    } else if (!auth.active && identity != null) {
+      disconnect();
+    }
+    setState(() {});
+  }
+
+  /// Ends collaboration, then the session (sign-out) or device token.
+  Future<void> signOut() async {
+    await disconnect();
+    if (identity == null) await auth.signOut();
+  }
+
   Future<void> connect() async {
+    if (connecting) return;
+    connecting = true;
     try {
       final me = await request('GET', '/v1/me') as Map<String, dynamic>;
-      final credential = token.text.trim();
       realtime = RealtimeSession(
         client: client,
-        issue: () => _requestWithCredential(
-          'POST',
-          '/v1/realtime/ticket',
-          const <String, dynamic>{},
-          credential,
-        ),
+        issue: () =>
+            request('POST', '/v1/realtime/ticket', const <String, dynamic>{}),
       );
       if (!mounted) return;
       setState(() {
@@ -177,8 +231,7 @@ class _CollaborationState extends State<Collaboration> {
         if (!mounted || identity != who || session != capturedSession) return;
         taskDelivery = TaskDelivery(
           outbox: queue,
-          network: (method, path, [body]) =>
-              _requestWithCredential(method, path, body, credential),
+          network: request,
           active: () =>
               mounted &&
               identity == who &&
@@ -207,8 +260,7 @@ class _CollaborationState extends State<Collaboration> {
         if (!mounted || identity != who || session != capturedSession) return;
         chatDelivery = TaskDelivery(
           outbox: queue,
-          network: (method, path, [body]) =>
-              _requestWithCredential(method, path, body, credential),
+          network: request,
           active: () =>
               mounted &&
               identity == who &&
@@ -246,6 +298,11 @@ class _CollaborationState extends State<Collaboration> {
       await refreshPresence();
     } catch (_) {
       if (mounted) setState(() => status = 'Connection failed');
+      // A wrong device token is simply refused; a signed-in session stays
+      // and can retry.
+      if (auth.usingDeviceToken) await auth.signOut();
+    } finally {
+      connecting = false;
     }
   }
 
@@ -557,6 +614,8 @@ class _CollaborationState extends State<Collaboration> {
   void initState() {
     super.initState();
     widget.position.addListener(positionChanged);
+    auth.addListener(_authChanged);
+    auth.restore();
   }
 
   @override
@@ -581,6 +640,8 @@ class _CollaborationState extends State<Collaboration> {
     movementTimer?.cancel();
     voice?.dispose();
     widget.position.removeListener(positionChanged);
+    auth.removeListener(_authChanged);
+    auth.dispose();
     client.close(force: true);
     queueNotifier.dispose();
     token.dispose();
@@ -597,7 +658,9 @@ class _CollaborationState extends State<Collaboration> {
         children: [
           Expanded(
             child: Text(
-              identity == null ? 'Connect to local node' : 'Chat · $status',
+              identity == null
+                  ? (auth.active ? 'Chat · $status' : 'Sign in')
+                  : 'Chat · $status',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -614,28 +677,40 @@ class _CollaborationState extends State<Collaboration> {
               },
               icon: const Icon(Icons.history, size: 18),
             ),
-          if (identity != null)
+          if (identity != null || auth.signedIn)
             IconButton(
-              tooltip: 'Disconnect',
-              onPressed: disconnect,
+              tooltip: auth.signedIn ? 'Sign out' : 'Disconnect',
+              onPressed: signOut,
               icon: const Icon(Icons.logout, size: 18),
             ),
         ],
       ),
-      if (identity == null) ...[
-        TextField(
-          controller: token,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'Enrollment token',
-            isDense: true,
-          ),
+      if (auth.signedIn)
+        Text(
+          '${auth.account!.name} · ${auth.account!.username}',
+          style: const TextStyle(fontSize: 11, color: Colors.black54),
+          overflow: TextOverflow.ellipsis,
         ),
+      if (identity == null && auth.signedIn)
         Row(
           children: [
-            TextButton(onPressed: connect, child: const Text('Connect')),
+            TextButton(
+              onPressed: connecting ? null : connect,
+              child: const Text('Retry'),
+            ),
             Expanded(child: Text(status, style: const TextStyle(fontSize: 11))),
           ],
+        )
+      else if (identity == null) ...[
+        SignInPanel(
+          auth: auth,
+          token: token,
+          status: status,
+          defaultCompany: widget.company,
+          onDeviceToken: () {
+            final value = token.text.trim();
+            if (value.isNotEmpty) auth.useDeviceToken(value);
+          },
         ),
         const Text(
           'Local node only · voice needs a connected node',
@@ -646,7 +721,10 @@ class _CollaborationState extends State<Collaboration> {
           onPressed: () async {
             final choice = await showDialog<String>(
               context: context,
-              builder: (context) => const WorkspaceTools(),
+              builder: (context) => WorkspaceTools(
+                account: auth.signedIn,
+                admin: auth.account?.admin ?? false,
+              ),
             );
             if (choice == null || !mounted) return;
             final Widget target = switch (choice) {
@@ -663,6 +741,15 @@ class _CollaborationState extends State<Collaboration> {
                     );
                   }
                 },
+              ),
+              'account' => AccountDialog(
+                request: request,
+                account: auth.account!,
+              ),
+              'people' => PeopleAdmin(request: request, account: auth.account!),
+              'company' => CompanyAdmin(
+                request: request,
+                account: auth.account!,
               ),
               'agents' => JobQueue(request: request, actors: widget.actors),
               'room-admin' => RoomMembership(

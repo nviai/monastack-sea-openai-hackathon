@@ -1,3 +1,4 @@
+mod auth;
 mod bookings;
 mod contracts;
 mod customers;
@@ -35,6 +36,8 @@ use std::{
 };
 
 type Db = Arc<Mutex<Connection>>;
+/// Database schema version written by this node; newer databases are refused.
+const SCHEMA_VERSION: i64 = 17;
 type ApiError = (StatusCode, &'static str);
 fn err(code: StatusCode, msg: &'static str) -> ApiError {
     (code, msg)
@@ -61,7 +64,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     let rooms = v["rooms"].as_array().ok_or("missing rooms")?;
     let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let version: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if version > 16 {
+    if version > SCHEMA_VERSION {
         return Err("database schema is newer than this node; refusing to modify it".into());
     }
     let has_metadata: bool = tx.query_row(
@@ -120,6 +123,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     hosts::initialize(&tx)?;
     leave::initialize(&tx)?;
     room_admin::initialize(&tx)?;
+    auth::initialize(&tx)?;
     let seeded: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-v1')",
         [],
@@ -128,7 +132,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     if seeded {
         jobs::seed_roles(&tx, actors)?;
         customers::seed_roles(&tx, actors)?;
-        tx.pragma_update(None, "user_version", 16)?;
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         return Ok(());
     }
@@ -158,7 +162,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     jobs::seed_roles(&tx, actors)?;
     customers::seed_roles(&tx, actors)?;
     tx.execute("INSERT INTO metadata VALUES ('seed-v1','applied')", [])?;
-    tx.pragma_update(None, "user_version", 16)?;
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
     Ok(())
 }
@@ -168,6 +172,11 @@ fn actor(db: &Connection, headers: &HeaderMap) -> Result<String, ApiError> {
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
         .ok_or(err(StatusCode::UNAUTHORIZED, "authentication required"))?;
+    // Signed-in sessions carry signed access tokens; local device tokens
+    // provisioned with `enroll` remain valid for operators and tests.
+    if token.starts_with("v1.") {
+        return auth::actor_from_access(db, token);
+    }
     db.query_row(
         "SELECT actor FROM tokens WHERE hash=?1",
         [hash(token)],
@@ -240,9 +249,17 @@ async fn me(
             |r| r.get(0),
         )
         .map_err(db_error)?;
+    let workspace_name: Option<String> = tx
+        .query_row(
+            "SELECT value FROM metadata WHERE key='workspace-name'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_error)?;
     tx.commit().map_err(db_error)?;
     Ok(Json(
-        serde_json::json!({"actor":who, "workspace":"nviai", "authority_id":authority_id}),
+        serde_json::json!({"actor":who, "workspace":"nviai", "authority_id":authority_id, "workspace_name": workspace_name}),
     ))
 }
 async fn room_permissions(
@@ -580,7 +597,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !std::path::Path::new(&path).is_file() { return Err("database does not exist; refusing to create it for revocation".into()); }
         },
         Some("backup" | "restore") if args.len()==3 => {},
-        _ => return Err("usage: office-node [realtime | enroll ACTOR | revoke | role grant|revoke hr|operations ACTOR | room grant|revoke ROOM ACTOR | host-enroll HOST HUMAN AGENT | host-revoke HOST | host-claims enable|disable | backup NEW_DESTINATION | restore SNAPSHOT]".into()),
+        Some("setup-code") if args.len()==2 => {},
+        Some("account-code" | "join") if args.len()==3 => {
+            if !std::path::Path::new(&path).is_file() { return Err("database does not exist; start the node once first".into()); }
+        },
+        _ => return Err("usage: office-node [realtime | setup-code | account-code ACTOR | join MASTER_URL (code on stdin) | enroll ACTOR | revoke | role grant|revoke hr|operations ACTOR | room grant|revoke ROOM ACTOR | host-enroll HOST HUMAN AGENT | host-revoke HOST | host-claims enable|disable | backup NEW_DESTINATION | restore SNAPSHOT]".into()),
     }
     if args.get(1).map(String::as_str) == Some("backup") {
         let destination = args
@@ -609,6 +630,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_str!("../../../data/seed/nviai/seed.v1.json"),
     )?;
     db.execute_batch("PRAGMA journal_mode=WAL;")?;
+    match args.get(1).map(String::as_str) {
+        Some("setup-code") => {
+            let code = auth::new_setup_code(&db)?.ok_or("the workspace is already set up")?;
+            println!("{code}");
+            return Ok(());
+        }
+        Some("account-code") => {
+            let issued = auth::operator_code(&mut db, &args[2])?;
+            println!("{}", issued["code"].as_str().unwrap_or_default());
+            eprintln!(
+                "{} code for {}; valid for 7 days, single use",
+                issued["purpose"].as_str().unwrap_or_default(),
+                args[2]
+            );
+            return Ok(());
+        }
+        Some("join") => {
+            let mut code = String::new();
+            io::stdin().read_to_string(&mut code)?;
+            auth::join_master(&mut db, &args[2], code.trim()).await?;
+            eprintln!("Joined the workspace; this node now follows its master for sign-in");
+            return Ok(());
+        }
+        _ => {}
+    }
     if args.get(1).map(String::as_str) == Some("host-enroll") {
         let (id, sponsor, agent) = (&args[2], &args[3], &args[4]);
         if !(16..=80).contains(&id.len())
@@ -987,6 +1033,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(tasks::assign),
         )
         .route("/v1/me", get(me))
+        .route("/v1/workspace", get(auth::workspace))
+        .route("/v1/setup", axum::routing::post(auth::setup))
+        .route("/v1/auth/login", axum::routing::post(auth::login))
+        .route("/v1/auth/refresh", axum::routing::post(auth::refresh))
+        .route("/v1/auth/logout", axum::routing::post(auth::logout))
+        .route("/v1/auth/invite", axum::routing::post(auth::accept_invite))
+        .route(
+            "/v1/auth/password",
+            axum::routing::post(auth::change_password),
+        )
+        .route("/v1/auth/sessions", get(auth::sessions))
+        .route(
+            "/v1/auth/sessions/{session}/revoke",
+            axum::routing::post(auth::revoke),
+        )
+        .route("/v1/admin/people", get(auth::people))
+        .route("/v1/admin/invites", axum::routing::post(auth::invite))
+        .route(
+            "/v1/admin/people/{actor}/state",
+            axum::routing::post(auth::set_disabled),
+        )
+        .route("/v1/admin/workspace", axum::routing::post(auth::rename))
+        .route("/v1/admin/nodes", get(auth::nodes).post(auth::add_node))
+        .route(
+            "/v1/admin/nodes/{node}/revoke",
+            axum::routing::post(auth::revoke_node),
+        )
+        .route("/v1/nodes/join", axum::routing::post(auth::join))
+        .route("/v1/nodes/directory", get(auth::directory))
         .route("/v1/rooms", get(room_permissions))
         .route("/v1/room-admin/capabilities", get(room_admin::capabilities))
         .route(
@@ -1000,7 +1075,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route("/v1/realtime/ticket", axum::routing::post(realtime_ticket))
         .route("/v1/realtime/epoch", get(realtime_epoch_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::forward_to_master,
+        ))
         .with_state(state.clone());
+    {
+        let db = state.lock().unwrap();
+        match auth::role(&db)? {
+            None => {
+                let code = auth::new_setup_code(&db)?.unwrap_or_default();
+                eprintln!("Workspace not set up. Setup code: {code}");
+                eprintln!("Enter it in the app to create the company and its first admin.");
+            }
+            Some(auth::Role::Member) => {
+                tokio::spawn(auth::sync_loop(state.clone()));
+            }
+            Some(auth::Role::Master) => {}
+        }
+    }
     let port: u16 = env::var("MONASTACK_NODE_PORT")
         .unwrap_or_else(|_| "47830".into())
         .parse()?;
@@ -1113,7 +1206,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         assert_eq!(
@@ -1127,7 +1220,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert_eq!(
             c.query_row("SELECT value FROM user_extension", [], |r| r
@@ -1141,7 +1234,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert_eq!(
             c.query_row(
@@ -1166,7 +1259,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert_eq!(
             c.query_row(
@@ -1191,7 +1284,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert_eq!(
             c.query_row(
@@ -1213,7 +1306,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch(
@@ -1224,7 +1317,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch(
@@ -1235,7 +1328,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch("DROP TABLE journal_reversals; PRAGMA user_version=8;")
@@ -1244,7 +1337,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch(
@@ -1255,7 +1348,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch(
@@ -1266,7 +1359,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch("DROP TABLE project_readers; PRAGMA user_version=5;")
@@ -1275,7 +1368,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch("DROP TABLE meeting_audit; DROP TABLE meetings; PRAGMA user_version=4;")
@@ -1284,7 +1377,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch("PRAGMA user_version=3;").unwrap();
@@ -1292,7 +1385,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         c.execute_batch("PRAGMA user_version=2;").unwrap();
@@ -1300,7 +1393,7 @@ mod tests {
         assert_eq!(
             c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            SCHEMA_VERSION
         );
         assert!(!permitted(&c, "van", "finance").unwrap());
         let n: i64 = c

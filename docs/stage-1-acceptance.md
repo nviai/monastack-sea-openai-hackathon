@@ -12,3 +12,5 @@ Acceptance criteria are from `reference/03-virtual-office.md`. "Verified" means 
 | 6 | Setup, topology, secrets handling, run/test commands, real vs fake capability status, known gaps; local-only mode stated | **Done** | `stage-1-status.md`, `capability-matrix.md`, ADRs 0001–0006, `backend/media/livekit-dev.sh` | Remote deployment profile when a secured network topology is chosen |
 
 **Capability status.** Office, presence, chat/DM and voice are real and run against local services. Seeded agents are profiles only: no agent runtime, shown as offline. Voice is real media with synthetic audio in automated tests. Real-microphone voice is **unverified**.
+
+**Workspace identity (added after the original acceptance list).** Company setup, password sign-in with keychain sessions, device lists, invitations, admin resets and disabling, and master/member identity federation are **verified on one Mac**: `auth_flow.py` (two real nodes over HTTP, including revocation reaching the member in 5 s and master outage) and `sign_in_app.py` (the macOS app with the real keychain). Two physical machines over an SSH tunnel are not verified. See ADR 0008.

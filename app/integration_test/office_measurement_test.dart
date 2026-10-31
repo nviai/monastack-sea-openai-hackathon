@@ -24,10 +24,10 @@ void main() {
         child: RepaintBoundary(key: boundary, child: const Monastack()),
       ),
     );
-    for (var i = 0; i < 40 && find.text('Connect').evaluate().isEmpty; i++) {
+    for (var i = 0; i < 40 && find.text('Sign in').evaluate().isEmpty; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
     final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
     for (var i = 0; i < 40 && world.map == null; i++) {

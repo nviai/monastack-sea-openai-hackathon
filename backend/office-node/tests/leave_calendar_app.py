@@ -11,6 +11,9 @@ import time
 import urllib.error
 import urllib.request
 
+# The app signs in with the enrolled device token, not a password (ADR 0008).
+os.environ.setdefault('MONASTACK_SIGN_IN', 'token')
+
 root = Path(__file__).resolve().parents[3]
 node = root / 'backend/office-node/target/debug/monastack-office-node'
 with tempfile.TemporaryDirectory(prefix='monastack-leave-calendar-') as directory:

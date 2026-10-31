@@ -12,6 +12,9 @@ import time
 import urllib.error
 import urllib.request
 
+# The app signs in with the enrolled device token, not a password (ADR 0008).
+os.environ.setdefault('MONASTACK_SIGN_IN', 'token')
+
 root = Path(__file__).resolve().parents[3]
 node_binary = root / 'backend/office-node/target/debug/monastack-office-node'
 with tempfile.TemporaryDirectory(prefix='monastack-two-app-test-') as directory:
@@ -43,6 +46,23 @@ with tempfile.TemporaryDirectory(prefix='monastack-two-app-test-') as directory:
         subprocess.run(['flutter', 'pub', 'get', '--offline'], cwd=app, env=env,
                        check=True, stdout=subprocess.DEVNULL, timeout=60)
         apps[actor] = app
+    # Build the two copies one after the other: two full macOS builds signing
+    # their frameworks at the same time can fail inside codesign. The test
+    # runs below then only rebuild incrementally.
+    # macOS codesign occasionally fails with "internal error in Code Signing
+    # subsystem"; that transient error is retried, anything else fails.
+    for app in apps.values():
+        for attempt in range(3):
+            build = subprocess.run(['flutter', 'build', 'macos', '--debug', '--no-pub',
+                                    '-t', 'integration_test/two_clients_test.dart'],
+                                   cwd=app, env=env, capture_output=True, text=True, timeout=600)
+            output = build.stdout + build.stderr
+            if build.returncode == 0:
+                break
+            if 'internal error in Code Signing subsystem' not in output or attempt == 2:
+                print(output[-6000:])
+                raise RuntimeError('macOS build failed')
+            print('codesign internal error; rebuilding')
     server = subprocess.Popen([str(node_binary)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     server_holder = [server]
     stop = threading.Event()

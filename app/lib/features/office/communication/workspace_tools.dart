@@ -75,10 +75,26 @@ const _groups = <(String, List<_Tool>)>[
   ),
 ];
 
+const _accountTools = <_Tool>[
+  (
+    id: 'account',
+    label: 'Account & devices',
+    icon: Icons.manage_accounts_outlined,
+  ),
+];
+const _adminTools = <_Tool>[
+  (id: 'people', label: 'People & invitations', icon: Icons.group_add_outlined),
+  (id: 'company', label: 'Company & nodes', icon: Icons.apartment_outlined),
+];
+
 /// Grouped launcher for workspace views. Returns the chosen tool ID.
 /// Every view authorizes its own requests against the node.
 class WorkspaceTools extends StatelessWidget {
-  const WorkspaceTools({super.key});
+  const WorkspaceTools({super.key, this.account = false, this.admin = false});
+
+  /// Signed in with an account (not a device token), and as an admin.
+  final bool account;
+  final bool admin;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -89,7 +105,11 @@ class WorkspaceTools extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final (group, tools) in _groups) ...[
+            for (final (group, tools) in [
+              if (account)
+                ('Account', [..._accountTools, if (admin) ..._adminTools]),
+              ..._groups,
+            ]) ...[
               Padding(
                 padding: const EdgeInsets.only(top: 10, bottom: 6),
                 child: Text(

@@ -44,7 +44,7 @@ void main() {
       }
       expect(find.text('NVIAI Smart Technology'), findsOneWidget);
       expect(find.text('Local node optional'), findsOneWidget);
-      expect(find.text('Connect to local node'), findsOneWidget);
+      expect(find.text('Sign in'), findsOneWidget);
       final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
       for (var i = 0; i < 5 && world.map == null; i++) {
         await tester.pump(const Duration(milliseconds: 100));

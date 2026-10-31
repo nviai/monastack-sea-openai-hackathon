@@ -43,6 +43,9 @@ class Office extends ConsumerStatefulWidget {
 class _OfficeState extends ConsumerState<Office> {
   String actor = 'an';
   String? connectedActor;
+
+  /// Company name of the signed-in workspace; the seed's name otherwise.
+  String? workspaceName;
   List<String>? serverRooms;
   String room = 'lobby';
   String? notice;
@@ -195,9 +198,11 @@ class _OfficeState extends ConsumerState<Office> {
                           ),
                         ),
                         const SizedBox(height: 9),
-                        const Text(
-                          'NVIAI Smart Technology',
-                          style: TextStyle(
+                        Text(
+                          workspaceName ??
+                              (data['workspace'] as Map?)?['name'] as String? ??
+                              '',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
@@ -443,6 +448,14 @@ class _OfficeState extends ConsumerState<Office> {
                           rooms: rooms,
                           speaking: speaking,
                           faces: faces,
+                          company:
+                              (data['workspace'] as Map?)?['name'] as String? ??
+                              '',
+                          onWorkspaceName: (name) {
+                            if (name != workspaceName && mounted) {
+                              setState(() => workspaceName = name);
+                            }
+                          },
                           onPermissions: (rooms) {
                             if (serverRooms != null &&
                                 serverRooms!.length == rooms.length &&

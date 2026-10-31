@@ -31,8 +31,6 @@ cargo build --manifest-path core/Cargo.toml
 cargo build --manifest-path backend/office-node/Cargo.toml
 umask 077
 export MONASTACK_DB="$PWD/office.sqlite3"
-openssl rand -hex 32 > local-an-token.txt
-backend/office-node/target/debug/monastack-office-node enroll an < local-an-token.txt
 
 # Optional voice: starts LiveKit on 127.0.0.1:7880-7882 with random local credentials.
 # If the repository is on a volume Docker Desktop does not share (for example under /Volumes),
@@ -44,11 +42,15 @@ export MONASTACK_REALTIME_PORT=47831   # embedded realtime; ephemeral if unset
 backend/office-node/target/debug/monastack-office-node
 ```
 
-In a second terminal: `cd app && flutter run -d macos`. Paste the token from `local-an-token.txt` and connect. Enroll other seeded people with their own random tokens to try a second identity.
+On its first start the node prints `Workspace not set up. Setup code: XXXX-XXXX-XXXX-XXXX` (`monastack-office-node setup-code` prints a new one). In a second terminal run `cd app && flutter run -d macos`, choose **Set up company**, enter the code, the company name, who you are, a username and a password. This node becomes the workspace's identity master and you its first admin. Invite colleagues from Workspace tools → People & invitations; they choose **I have a code** on the sign-in panel. The session is kept in the macOS keychain, so the app signs in again on the next launch until you sign out (ADR 0008).
+
+To add another node to the same workspace, create a join code in Workspace tools → Company & nodes, then on the other node (its own `MONASTACK_DB` and `MONASTACK_NODE_PORT`, started once so the database exists) run `monastack-office-node join http://127.0.0.1:47830` and paste the code. For a master on another machine, forward its port over SSH first. Only accounts and revocations are shared; chat and records stay on each node.
+
+Operators and tests can still sign in with a local device token: `openssl rand -hex 32 > local-an-token.txt`, `monastack-office-node enroll an < local-an-token.txt`, then **Use a device token** in the app. If no admin can sign in, `monastack-office-node account-code ACTOR` prints a one-time invitation or password-reset code.
 
 To run realtime as a separate process, create a shared key with `openssl rand -hex 32 > .monastack-dev/realtime.key` and set `MONASTACK_REALTIME_KEY_FILE` to it in both terminals. Then start the node with `MONASTACK_REALTIME=external` and the realtime service with `monastack-office-node realtime`. The media variables go on the realtime service.
 
-**Secrets.** Bearer tokens, `.monastack-dev/` (realtime and LiveKit keys) and the database are private local files. They are git-ignored and created with mode 0600 or 0700. The node stores only SHA-256 hashes of bearer tokens. Tokens are passed on stdin, never as arguments. A local operator revokes a credential with `monastack-office-node revoke < token-file`. Room membership is changed with `room grant|revoke ROOM ACTOR`, or in the app by an organization admin. Every such change is audited and advances the realtime epoch, so presence and voice access end immediately. There is no expiry, rate limiting or credential UI, and nothing here is a production credential.
+**Secrets.** Device tokens, `.monastack-dev/` (realtime and LiveKit keys) and the database are private local files. They are git-ignored and created with mode 0600 or 0700. The node stores Argon2id password hashes and SHA-256 hashes of refresh and device tokens; the master's database also holds the workspace signing key. Tokens and codes are passed on stdin, never as arguments. A local operator revokes a device token with `monastack-office-node revoke < token-file`; signed-in devices are ended from the app. Room membership is changed with `room grant|revoke ROOM ACTOR`, or in the app by an organization admin. Every such change, and every session revocation, is audited and advances the realtime epoch, so presence and voice access end immediately. Access tokens last 10 minutes and sessions 30 days from last use; device tokens do not expire. Nothing here is a production credential.
 
 ## Office
 
@@ -75,7 +77,8 @@ To run realtime as a separate process, create a shared key with `openssl rand -h
 - **Spatial rejoin.** A member who walks out of a room can still rejoin that room's voice with an unexpired token, for up to 120 s.
 - **Camera.** LiveKit can read video as well as audio. Faces are drawn above the office canvas, so walls fade them rather than hide them.
 - **Other platforms.** iOS, Android, web, Windows and Linux are scaffolds with icons only; they have not been built or run, and the Rust core is bundled for macOS only.
-- **Not production.** Identity is a locally provisioned bearer token, with no device lifecycle. Remote administration, TLS and a security review are not done.
+- **Identity.** Accounts, sessions and the signing key live on the master node (ADR 0008). Members accept already issued access tokens for up to 10 minutes while the master is unreachable. There is no second factor, email reset or key rotation, and identity traffic stays on loopback (SSH tunnel between machines).
+- **Not production.** Remote administration, TLS and a security review are not done.
 
 ## Measurement
 

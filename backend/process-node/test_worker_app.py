@@ -11,6 +11,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# The app signs in with the enrolled device token, not a password (ADR 0008).
+os.environ.setdefault('MONASTACK_SIGN_IN', 'token')
+
 root=Path(__file__).resolve().parents[2]
 node=root/'backend/office-node/target/debug/monastack-office-node'
 image=subprocess.check_output(['docker','image','inspect','alpine:3.23','--format','{{.Id}}'],text=True).strip()

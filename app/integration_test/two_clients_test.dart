@@ -18,7 +18,18 @@ void main() {
       final worlds = find.byType(OfficeWorld).evaluate();
       if (worlds.isEmpty) return 'no world';
       final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
-      return 'me=${world.current} remote=${world.widget.remote.value.map((p) => '${p['actor']}@${p['room']}:${p['x']},${p['y']}').join(' ')}';
+      final status = find
+          .byType(Text)
+          .evaluate()
+          .map((e) => (e.widget as Text).data ?? '')
+          .where(
+            (t) =>
+                t.startsWith('Chat ·') ||
+                t.contains('visible session') ||
+                t.contains('Presence'),
+          )
+          .join(' / ');
+      return 'me=${world.current} remote=${world.widget.remote.value.map((p) => '${p['actor']}@${p['room']}:${p['x']},${p['y']}').join(' ')} [$status]';
     }
 
     Future<void> until(

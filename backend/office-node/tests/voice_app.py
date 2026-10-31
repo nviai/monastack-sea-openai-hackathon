@@ -26,6 +26,9 @@ from livekit import rtc
 
 from realtime_client import Realtime
 
+# The app signs in with the enrolled device token, not a password (ADR 0008).
+os.environ.setdefault('MONASTACK_SIGN_IN', 'token')
+
 SERVER_IMAGE = 'sha256:89ca9ce0791e18d6e03bf6e2c49ceb27e1c754eae8bd50c989386c1a5963791a'
 root = Path(__file__).resolve().parents[3]
 node = root / 'backend/office-node/target/debug/monastack-office-node'
