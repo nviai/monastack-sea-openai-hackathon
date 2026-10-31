@@ -92,7 +92,9 @@ impl MediaConfig {
         self.jwt(json!({"iss": self.key, "nbf": now - 5, "exp": now + 60, "video": video}))
     }
 
-    /// Join token: microphone audio only, no data channel, one media room.
+    /// Join token: microphone audio and camera video, no data channel, one
+    /// media room. Both start off in the client; the server only bounds what
+    /// may be published.
     pub fn join_token(&self, room: &str, identity: &str, actor: &str) -> String {
         let now = crate::now();
         self.jwt(json!({
@@ -107,7 +109,7 @@ impl MediaConfig {
                 "canSubscribe": true,
                 "canPublish": true,
                 "canPublishData": false,
-                "canPublishSources": ["microphone"],
+                "canPublishSources": ["microphone", "camera"],
             },
         }))
     }
@@ -344,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn join_tokens_are_scoped_to_one_room_and_microphone_audio() {
+    fn join_tokens_are_scoped_to_one_room_microphone_and_camera() {
         let token = config().join_token("mona-lobby-0-1", "an.0123456789ab", "an");
         let c = claims(&token);
         assert_eq!(c["iss"], "devkey");
@@ -352,7 +354,10 @@ mod tests {
         assert_eq!(c["video"]["room"], "mona-lobby-0-1");
         assert_eq!(c["video"]["roomJoin"], true);
         assert_eq!(c["video"]["canPublishData"], false);
-        assert_eq!(c["video"]["canPublishSources"], json!(["microphone"]));
+        assert_eq!(
+            c["video"]["canPublishSources"],
+            json!(["microphone", "camera"])
+        );
         assert!(c["video"].get("roomAdmin").is_none());
         assert!(c["exp"].as_i64().unwrap() - crate::now() <= TOKEN_SECONDS);
         // The signature covers header and claims.

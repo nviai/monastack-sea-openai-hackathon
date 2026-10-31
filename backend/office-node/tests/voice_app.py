@@ -3,9 +3,11 @@
 Run with the synthetic media environment:
     tools/media-spike/.venv/bin/python backend/office-node/tests/voice_app.py
 
-A Python participant (actor `van`) publishes generated silence in the lobby;
-the app (actor `an`) joins lobby voice muted, must receive that audio, and
-must stop receiving it after walking to Dev & QA. No microphone is opened.
+A Python participant (actor `van`) publishes generated silence and a generated
+camera video in the lobby; the app (actor `an`) joins lobby voice muted, must
+receive that audio, must show and decode the video in place of van's face, and
+must stop receiving both after walking to Dev & QA. No microphone or camera is
+opened on this machine.
 """
 import asyncio
 import os
@@ -104,8 +106,19 @@ with tempfile.TemporaryDirectory(prefix='monastack-voice-app-') as directory:
                 track = rtc.LocalAudioTrack.create_audio_track('synthetic-silence', source)
                 await room.local_participant.publish_track(
                     track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
+                # Synthetic camera: a slowly shifting colour, 160x120 at ~15 fps.
+                video = rtc.VideoSource(160, 120)
+                camera = rtc.LocalVideoTrack.create_video_track('synthetic-camera', video)
+                await room.local_participant.publish_track(
+                    camera, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA))
+                tick = 0
                 while not stop.is_set():
                     await source.capture_frame(rtc.AudioFrame(bytes(960), 48000, 1, 480))
+                    if tick % 7 == 0:
+                        shade = (tick // 7) % 200
+                        pixel = bytes((40 + shade, 120, 220 - shade, 255))
+                        video.capture_frame(rtc.VideoFrame(160, 120, rtc.VideoBufferType.RGBA, pixel * (160 * 120)))
+                    tick += 1
                     await asyncio.sleep(.01)
                 beat.cancel()
                 await room.disconnect()
@@ -121,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-voice-app-') as directory:
             print(output[-6000:])
             raise SystemExit('voice app test failed')
         print('\n'.join(l for l in output.splitlines() if l.startswith('voice app:')))
-        print('macOS app voice: joined muted, received synthetic peer audio, followed room and isolated it')
+        print('macOS app voice: joined muted, received synthetic peer audio and camera face, followed room and isolated both')
     finally:
         stop.set()
         server.terminate()

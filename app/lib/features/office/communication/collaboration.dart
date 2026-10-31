@@ -15,6 +15,7 @@ import 'package:monastack/features/customers/contracts.dart';
 import 'package:monastack/features/customers/bookings.dart';
 import 'package:monastack/features/office/communication/chat_history.dart';
 import 'package:monastack/features/office/presence/realtime_session.dart';
+import 'package:monastack/features/office/voice/camera_faces.dart';
 import 'package:monastack/features/office/voice/voice_controller.dart';
 import 'package:monastack/features/office/voice/voice_panel.dart';
 import 'package:monastack/features/office/communication/workspace_tools.dart';
@@ -43,6 +44,7 @@ class Collaboration extends StatefulWidget {
     required this.onIdentity,
     required this.onPermissions,
     this.speaking,
+    this.faces,
   });
   final String room;
   final ValueNotifier<List<int>> position;
@@ -54,6 +56,9 @@ class Collaboration extends StatefulWidget {
 
   /// Receives the actors currently speaking in voice, for the office view.
   final ValueNotifier<Set<String>>? speaking;
+
+  /// Receives live camera views by actor, which replace avatar faces.
+  final ValueNotifier<Map<String, Widget>>? faces;
   @override
   State<Collaboration> createState() => _CollaborationState();
 }
@@ -452,7 +457,10 @@ class _CollaborationState extends State<Collaboration> {
   }
 
   void _voiceChanged() {
-    widget.speaking?.value = voice?.value.speaking ?? const {};
+    final state = voice?.value ?? const VoiceState();
+    widget.speaking?.value = state.speaking;
+    final faces = widget.faces;
+    if (faces != null) faces.value = cameraFaces(state, faces.value);
   }
 
   Future<void> disconnect() async {
@@ -493,6 +501,7 @@ class _CollaborationState extends State<Collaboration> {
     await closing?.leave();
     closing?.dispose();
     widget.speaking?.value = const {};
+    widget.faces?.value = const {};
     try {
       await realtime?.request(
         'DELETE',

@@ -16,9 +16,11 @@ class VoiceState {
     this.phase = VoicePhase.unavailable,
     this.room,
     this.microphone = false,
+    this.camera = false,
     this.participants = const {},
     this.speaking = const {},
     this.hearing = const {},
+    this.videos = const {},
     this.message,
   });
 
@@ -30,37 +32,49 @@ class VoiceState {
   /// Whether the local microphone is published. Always false on join.
   final bool microphone;
 
+  /// Whether the local camera is published. Always false on join.
+  final bool camera;
+
   /// Actor IDs of other participants, and of everyone currently speaking.
   final Set<String> participants;
   final Set<String> speaking;
 
   /// Actors whose audio this client is receiving.
   final Set<String> hearing;
+
+  /// Live camera tracks by actor, including this user's own preview. Only
+  /// people in the same media room are present here.
+  final Map<String, lk.VideoTrack> videos;
   final String? message;
 
   VoiceState copyWith({
     VoicePhase? phase,
     String? room,
     bool? microphone,
+    bool? camera,
     Set<String>? participants,
     Set<String>? speaking,
     Set<String>? hearing,
+    Map<String, lk.VideoTrack>? videos,
     String? message,
     bool clearMessage = false,
   }) => VoiceState(
     phase: phase ?? this.phase,
     room: room ?? this.room,
     microphone: microphone ?? this.microphone,
+    camera: camera ?? this.camera,
     participants: participants ?? this.participants,
     speaking: speaking ?? this.speaking,
     hearing: hearing ?? this.hearing,
+    videos: videos ?? this.videos,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
 
 /// Joins the voice room for the room the user is in, through the realtime
-/// media control plane. Voice is opt-in per session, the microphone starts
-/// muted on every join, and leaving or losing access ends the connection.
+/// media control plane. Voice is opt-in per session, the microphone and the
+/// camera start off on every join, and leaving or losing access ends the
+/// connection.
 class VoiceController extends ValueNotifier<VoiceState> {
   VoiceController({
     required this.realtime,
@@ -145,6 +159,30 @@ class VoiceController extends ValueNotifier<VoiceState> {
     }
   }
 
+  /// Publishes the camera; it replaces this user's face in the office for
+  /// everyone in the same voice room.
+  Future<void> setCamera(bool enabled) async {
+    final connection = _connection;
+    if (connection == null || value.phase != VoicePhase.joined) return;
+    try {
+      await connection.setCamera(enabled);
+      if (!_disposed) {
+        value = value.copyWith(camera: enabled, clearMessage: true);
+        _update();
+      }
+    } catch (_) {
+      if (_disposed) return;
+      try {
+        await connection.setCamera(false);
+      } catch (_) {}
+      value = value.copyWith(
+        camera: false,
+        message: 'Camera unavailable. Check privacy settings.',
+      );
+      _update();
+    }
+  }
+
   Future<void> _drop() async {
     final connection = _connection;
     _connection = null;
@@ -225,6 +263,7 @@ class VoiceController extends ValueNotifier<VoiceState> {
       participants: connection.participants(),
       speaking: connection.speaking(),
       hearing: connection.hearing(),
+      videos: connection.videos(),
     );
   }
 
@@ -260,7 +299,11 @@ abstract class VoiceConnection {
   Set<String> participants();
   Set<String> speaking();
   Set<String> hearing();
+
+  /// Live camera tracks by actor, the local one included.
+  Map<String, lk.VideoTrack> videos();
   Future<void> setMicrophone(bool enabled);
+  Future<void> setCamera(bool enabled);
   Future<void> close();
 }
 
@@ -274,6 +317,10 @@ class _LiveKitConnection extends VoiceConnection {
       ..on<lk.ActiveSpeakersChangedEvent>((_) => onChanged?.call())
       ..on<lk.TrackSubscribedEvent>((_) => onChanged?.call())
       ..on<lk.TrackUnsubscribedEvent>((_) => onChanged?.call())
+      ..on<lk.TrackMutedEvent>((_) => onChanged?.call())
+      ..on<lk.TrackUnmutedEvent>((_) => onChanged?.call())
+      ..on<lk.LocalTrackPublishedEvent>((_) => onChanged?.call())
+      ..on<lk.LocalTrackUnpublishedEvent>((_) => onChanged?.call())
       ..on<lk.RoomDisconnectedEvent>((_) {
         if (!_closing) onClosed?.call();
       });
@@ -301,8 +348,45 @@ class _LiveKitConnection extends VoiceConnection {
   };
 
   @override
+  Map<String, lk.VideoTrack> videos() {
+    final result = <String, lk.VideoTrack>{};
+    final local = room.localParticipant;
+    for (final p in <lk.Participant>[
+      ?local,
+      ...room.remoteParticipants.values,
+    ]) {
+      final track = p.videoTrackPublications
+          .where(
+            (t) =>
+                t.source == lk.TrackSource.camera &&
+                t.track != null &&
+                !t.muted,
+          )
+          .firstOrNull
+          ?.track;
+      if (track is lk.VideoTrack) {
+        result.putIfAbsent(_actorOf(p.identity), () => track);
+      }
+    }
+    return result;
+  }
+
+  @override
   Future<void> setMicrophone(bool enabled) async {
     await room.localParticipant?.setMicrophoneEnabled(enabled);
+  }
+
+  @override
+  Future<void> setCamera(bool enabled) async {
+    // A small square-ish capture is enough for a face bubble and keeps the
+    // load low with several people in a room.
+    await room.localParticipant?.setCameraEnabled(
+      enabled,
+      cameraCaptureOptions: const lk.CameraCaptureOptions(
+        params: lk.VideoParametersPresets.h360_43,
+        maxFrameRate: 24,
+      ),
+    );
   }
 
   @override

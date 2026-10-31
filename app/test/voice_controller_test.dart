@@ -3,11 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:monastack/features/office/presence/realtime_session.dart';
 import 'package:monastack/features/office/voice/voice_controller.dart';
 
 class FakeConnection extends VoiceConnection {
   bool microphone = false;
+  bool camera = false;
+  bool cameraFails = false;
   bool closed = false;
   Set<String> others = {};
   Set<String> talking = {};
@@ -18,7 +21,15 @@ class FakeConnection extends VoiceConnection {
   @override
   Set<String> hearing() => others;
   @override
+  Map<String, lk.VideoTrack> videos() => const {};
+  @override
   Future<void> setMicrophone(bool enabled) async => microphone = enabled;
+  @override
+  Future<void> setCamera(bool enabled) async {
+    if (enabled && cameraFails) throw StateError('no camera');
+    camera = enabled;
+  }
+
   @override
   Future<void> close() async => closed = true;
 }
@@ -150,5 +161,37 @@ void main() {
     connections.last.onChanged!();
     expect(voice.value.participants, {'van'});
     expect(setEquals(speaking.last, {'van'}), isTrue);
+  });
+
+  test('camera starts off on every join and failures fall back', () async {
+    final (server, _) = await fakeRealtime(() => [200]);
+    addTearDown(() => server.close(force: true));
+    final connections = <FakeConnection>[];
+    final voice = VoiceController(
+      realtime: session(server),
+      session: () => 's',
+      connector: (url, token) async {
+        final c = FakeConnection();
+        connections.add(c);
+        return c;
+      },
+    );
+    addTearDown(voice.dispose);
+    await voice.setCamera(true);
+    expect(voice.value.camera, isFalse, reason: 'no camera before joining');
+    await voice.join('lobby');
+    expect(voice.value.camera, isFalse, reason: 'camera off on join');
+    expect(connections.single.camera, isFalse);
+    await voice.setCamera(true);
+    expect(voice.value.camera, isTrue);
+    expect(connections.single.camera, isTrue);
+    await voice.follow('dev');
+    expect(voice.value.camera, isFalse, reason: 'camera off in a new room');
+    expect(connections.last.camera, isFalse);
+    connections.last.cameraFails = true;
+    await voice.setCamera(true);
+    expect(voice.value.camera, isFalse);
+    expect(voice.value.message, contains('Camera unavailable'));
+    expect(voice.value.phase, VoicePhase.joined, reason: 'voice continues');
   });
 }

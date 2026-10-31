@@ -50,6 +50,12 @@ class AvatarStyle {
 /// Height above the floor at which a name label is anchored.
 const avatarLabelHeight = 52.0;
 
+/// Height of the top of the torso: a camera face sits on it.
+const avatarShoulderHeight = 30.0;
+
+/// Height of the drawn head's centre.
+const avatarHeadHeight = 38.0;
+
 /// Screen-space bounds (in projected world units) of an avatar at a cell.
 Rect avatarBounds(Iso iso, double x, double y) {
   final feet = iso.project(x, y);
@@ -58,7 +64,8 @@ Rect avatarBounds(Iso iso, double x, double y) {
 
 /// Paints a low-poly figure standing on world point `(x, y)`.
 /// Offline agents are drawn translucent and grey with an antenna so they
-/// are never mistaken for an online person.
+/// are never mistaken for an online person. With `face: false` the head is
+/// left out because a live camera bubble is drawn in its place.
 void paintAvatar(
   Canvas canvas,
   Iso iso,
@@ -69,6 +76,7 @@ void paintAvatar(
   bool offlineAgent = false,
   double bob = 0,
   Color ring = const Color(0xff2f7a5f),
+  bool face = true,
 }) {
   final feet = iso.project(x, y);
   final opacity = offlineAgent ? .55 : 1.0;
@@ -116,7 +124,8 @@ void paintAvatar(
     Paint()..color = tone(shade(shirt, -.08)),
   );
   canvas.restore();
-  final head = feet + Offset(0, -38 + lift);
+  if (!face && !offlineAgent) return;
+  final head = feet + Offset(0, -avatarHeadHeight + lift);
   if (offlineAgent) {
     final face = RRect.fromRectAndRadius(
       Rect.fromCenter(center: head, width: 16, height: 14),

@@ -10,7 +10,7 @@ The earlier spikes showed self-hosted LiveKit cannot invalidate an issued token:
 
 - **Server.** Self-hosted LiveKit `v1.13.10`, pinned by digest, in Docker, listening on 127.0.0.1 only (`backend/media/livekit-dev.sh`). `room.auto_create: false`: a token can only join a media room that the control plane created. No third-party service, STUN or TURN is used.
 - **Control plane** (`backend/office-node/src/media.rs`, inside the realtime capability). One `MediaGate` (Rust core) per Monastack room; each gate generation is one media room named `mona-{room}-{epoch}-{generation}`.
-  - `POST /v1/media/token {room, session}` requires a current ticket listing the room **and** the caller's live presence session in that room. It then mints a join token: that one media room, microphone audio only, no data channel, 120 s lifetime. Identity is `actor.session-prefix`.
+  - `POST /v1/media/token {room, session}` requires a current ticket listing the room **and** the caller's live presence session in that room. It then mints a join token: that one media room, microphone audio and (since ADR 0007) camera video only, no data channel, 120 s lifetime. Identity is `actor.session-prefix`.
   - When the access epoch advances, every media room from an older epoch is **deleted before** a new one is created. Deletion disconnects all participants and makes every token for that room useless. If deletion or creation fails, the gate is blocked and no token is issued (HTTP 503).
   - On start-up it deletes all `mona-` rooms left by a previous run before issuing anything, so tokens from before a restart cannot join.
   - Leaving a room (presence moves, leaves or expires) removes that session's participant.

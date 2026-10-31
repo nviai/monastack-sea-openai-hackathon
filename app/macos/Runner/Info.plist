@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Monastack shows your camera as your avatar's face only after you turn the camera on in a room's voice channel.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Monastack uses the microphone only after you unmute in a room's voice channel.</string>
 	<key>CFBundleDevelopmentRegion</key>

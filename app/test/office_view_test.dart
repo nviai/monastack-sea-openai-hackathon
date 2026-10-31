@@ -177,4 +177,79 @@ void main() {
       [14, 14],
     ]);
   });
+
+  testWidgets('live camera views replace faces and open the profile', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final remote = ValueNotifier<List<Map<String, dynamic>>>([
+      {
+        'session': 's2',
+        'actor': 'van',
+        'room': 'lobby',
+        'x': 12,
+        'y': 13,
+        'seq': 1,
+      },
+    ]);
+    addTearDown(remote.dispose);
+    final faces = ValueNotifier<Map<String, Widget>>(const {});
+    addTearDown(faces.dispose);
+    final selected = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OfficeWorld(
+            seed: const {'rooms': []},
+            remote: remote,
+            actor: 'synthetic',
+            findPath: (start, goal) async => null,
+            onPosition: (_, _) {},
+            onError: (_) {},
+            onSelectActor: selected.add,
+            faces: faces,
+          ),
+        ),
+      ),
+    );
+    final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
+    for (var i = 0; i < 100 && world.map == null; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(world.game.faceSlots, isEmpty, reason: 'no camera, drawn faces');
+    faces.value = {
+      'synthetic': const ColoredBox(key: Key('cam-self'), color: Colors.red),
+      'van': const ColoredBox(key: Key('cam-van'), color: Colors.blue),
+    };
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byKey(const Key('cam-self')), findsOneWidget);
+    expect(find.byKey(const Key('cam-van')), findsOneWidget);
+    final game = world.game;
+    final van = game.faceSlots.firstWhere((f) => f.actor == 'van');
+    // The bubble sits where the head would be, above the feet.
+    final feet = game.toScreen(game.iso.project(12, 13));
+    expect(van.center.dx, closeTo(feet.dx, 1));
+    expect(van.center.dy, lessThan(feet.dy));
+    expect(van.diameter, greaterThanOrEqualTo(30));
+    expect(
+      tester.getRect(find.byKey(const Key('cam-van'))).center.dx,
+      closeTo(van.center.dx, 1),
+    );
+    await tester.tapAt(van.center);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(selected, ['van']);
+    faces.value = const {};
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byKey(const Key('cam-van')), findsNothing);
+    expect(game.faceSlots, isEmpty);
+  });
 }

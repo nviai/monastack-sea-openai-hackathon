@@ -20,6 +20,21 @@ class _Figure {
 
 enum _Kind { self, remote, agent }
 
+/// Where a live camera face is shown this frame, in screen pixels.
+@immutable
+class FaceSlot {
+  const FaceSlot(this.actor, this.center, this.diameter, {this.behind = false});
+  final String actor;
+  final Offset center;
+  final double diameter;
+
+  /// The figure's head is behind a wall or furniture; the bubble is faded
+  /// because Flutter widgets cannot be interleaved with the canvas.
+  final bool behind;
+
+  Rect get rect => Rect.fromCircle(center: center, radius: diameter / 2);
+}
+
 /// Renders the cached office scene, avatars with occlusion and a
 /// constant-size overlay. State changes here never rebuild Flutter widgets.
 class WorldGame extends FlameGame {
@@ -41,6 +56,17 @@ class WorldGame extends FlameGame {
 
   /// Actors currently speaking in voice.
   Set<String> speaking = const {};
+
+  /// Actors whose live camera replaces their drawn face.
+  Set<String> faces = const {};
+
+  /// Camera faces placed by the last render, for the widget overlay.
+  List<FaceSlot> get faceSlots => List.unmodifiable(_faceSlots.values);
+  final Map<String, FaceSlot> _faceSlots = {};
+
+  /// Camera bubble diameter in world units, and its on-screen limits.
+  static const faceSize = 34.0;
+  static const faceMinPixels = 30.0, faceMaxPixels = 140.0;
   bool reducedMotion = false;
 
   List<List<int>> route = [];
@@ -115,6 +141,10 @@ class WorldGame extends FlameGame {
   /// Actor whose figure is under the point, preferring the nearest figure.
   String? actorAt(Offset point) {
     for (final figure in _figures.reversed) {
+      final face = _faceSlots[figure.actor];
+      if (face != null && (point - face.center).distance <= face.diameter / 2) {
+        return figure.actor;
+      }
       final bounds = avatarBounds(iso, figure.x, figure.y);
       final rect = Rect.fromPoints(
         toScreen(bounds.topLeft),
@@ -259,6 +289,7 @@ class WorldGame extends FlameGame {
       ])
       ..sort((a, b) => a.depth.compareTo(b.depth));
     final occluders = scene.occluders;
+    _faceSlots.clear();
     for (final figure in _figures) {
       final walking =
           figure.kind == _Kind.self && _from != null && !reducedMotion;
@@ -277,6 +308,8 @@ class WorldGame extends FlameGame {
             ..color = const Color(0xcc2f9e6f),
         );
       }
+      final camera = figure.kind != _Kind.agent && faces.contains(figure.actor);
+      final bob = walking ? (math.sin(_clock * 18).abs() * 2.5) : 0.0;
       paintAvatar(
         canvas,
         iso,
@@ -285,16 +318,38 @@ class WorldGame extends FlameGame {
         AvatarStyle.of(figure.actor),
         self: figure.kind == _Kind.self,
         offlineAgent: figure.kind == _Kind.agent,
-        bob: walking ? (math.sin(_clock * 18).abs() * 2.5) : 0,
+        bob: bob,
+        face: !camera,
       );
       final bounds = avatarBounds(iso, figure.x, figure.y);
+      final head = Rect.fromCircle(
+        center: iso.project(figure.x, figure.y, avatarHeadHeight + bob),
+        radius: 8,
+      );
+      var behind = false;
       for (final occluder in occluders) {
         if (occluder.depth > figure.depth && occluder.bounds.overlaps(bounds)) {
           occluder.paint(canvas);
+          behind = behind || occluder.bounds.overlaps(head);
         }
+      }
+      if (camera) {
+        final diameter = (faceSize * scale)
+            .clamp(faceMinPixels, faceMaxPixels)
+            .toDouble();
+        final shoulders = toScreen(
+          iso.project(figure.x, figure.y, avatarShoulderHeight + bob),
+        );
+        _faceSlots[figure.actor] = FaceSlot(
+          figure.actor,
+          shoulders - Offset(0, diameter / 2 - 3),
+          diameter,
+          behind: behind,
+        );
       }
     }
     // A faint outline keeps the local avatar findable behind tall walls.
+    if (_faceSlots.containsKey(self)) return;
     final p = selfPoint;
     final head = iso.project(p.x, p.y, 38);
     canvas.drawCircle(
@@ -325,9 +380,10 @@ class WorldGame extends FlameGame {
       );
     }
     for (final figure in _figures) {
-      final anchor = toScreen(
-        iso.project(figure.x, figure.y, avatarLabelHeight),
-      );
+      final face = _faceSlots[figure.actor];
+      final anchor = face != null
+          ? face.center - Offset(0, face.diameter / 2 + 2)
+          : toScreen(iso.project(figure.x, figure.y, avatarLabelHeight));
       final name = names[figure.actor] ?? figure.actor;
       switch (figure.kind) {
         case _Kind.self:

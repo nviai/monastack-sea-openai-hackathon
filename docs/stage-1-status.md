@@ -1,6 +1,6 @@
 # Stage 1 status
 
-Stage 1 is **implemented and verified on one Mac with automated tests**, but it is not signed off. Three checks need hardware or a person and have not been done: real-microphone voice between two people, two physical Macs, and running the x86_64 slice of the universal release build (this Mac has no Rosetta). The manual procedure is at the end of this document. This is a loopback development topology, not a production service. Do not put confidential data in it or expose it to a network.
+Stage 1 is **implemented and verified on one Mac with automated tests**, but it is not signed off. Three checks need hardware or a person and have not been done: real-microphone and real-webcam voice between two people, two physical Macs, and running the x86_64 slice of the universal release build (this Mac has no Rosetta). The manual procedure is at the end of this document. This is a loopback development topology, not a production service. Do not put confidential data in it or expose it to a network.
 
 See [the acceptance tracker](stage-1-acceptance.md) for item-by-item evidence, and the ADRs in [`adr/`](adr/) for design decisions:
 - [0001](adr/0001-local-authority.md): authority and records
@@ -35,6 +35,8 @@ openssl rand -hex 32 > local-an-token.txt
 backend/office-node/target/debug/monastack-office-node enroll an < local-an-token.txt
 
 # Optional voice: starts LiveKit on 127.0.0.1:7880-7882 with random local credentials.
+# If the repository is on a volume Docker Desktop does not share (for example under /Volumes),
+# first run: export MONASTACK_DEV_DIR="$HOME/.monastack-dev" and use that path for the key file below.
 backend/media/livekit-dev.sh start
 export MONASTACK_MEDIA_URL=ws://127.0.0.1:7880 MONASTACK_MEDIA_KEY_FILE="$PWD/.monastack-dev/media.key"
 
@@ -63,6 +65,7 @@ To run realtime as a separate process, create a shared key with `openssl rand -h
 - **Presence** is ephemeral and held by the realtime service. The app publishes its position within about 120 ms of moving, sends a 5 s heartbeat, and reads presence every second. Remote one-cell moves are interpolated. A session expires 20 s after its last heartbeat. A second macOS app killed with SIGKILL disappeared from the first app's view within the expiry window and did not come back (`app_crash_app.py`).
 - **Chat.** Room chat and DMs are authorized and stored by the authority, with idempotent IDs, a durable local send queue, reconnect, scoped history and revocation. This is unchanged from the earlier prototype and described in the tests below.
 - **Voice** is opt-in per session. The microphone starts muted on every join, and voice follows the room you are in. Speakers get a ring in the office view. Access is enforced by the media control plane, not by the UI (ADR 0006). If voice fails, the panel points to room chat.
+- **Camera faces.** In voice, "Turn camera on" publishes your webcam; it replaces your avatar's face for everyone in the same room's voice, and theirs replace their faces for you. The camera is off on every join, including when voice follows you into another room (ADR 0007). Verified with a synthetic camera peer against real LiveKit; a real webcam and the macOS camera prompt are not verified.
 
 ## Trust model and limits
 
@@ -70,6 +73,8 @@ To run realtime as a separate process, create a shared key with `openssl rand -h
 - **No forgetting.** A device cannot be made to forget data it already received.
 - **Revocation.** It reaches presence immediately in the embedded mode and in about 1 s in separate mode. For voice it ends the connection within about 0.4 s. Any access change briefly reconnects all voice rooms and hides presence until each client republishes.
 - **Spatial rejoin.** A member who walks out of a room can still rejoin that room's voice with an unexpired token, for up to 120 s.
+- **Camera.** LiveKit can read video as well as audio. Faces are drawn above the office canvas, so walls fade them rather than hide them.
+- **Other platforms.** iOS, Android, web, Windows and Linux are scaffolds with icons only; they have not been built or run, and the Rust core is bundled for macOS only.
 - **Not production.** Identity is a locally provisioned bearer token, with no device lifecycle. Remote administration, TLS and a security review are not done.
 
 ## Measurement
@@ -116,6 +121,7 @@ The macOS tests drive Flutter controls directly and force frames, because the ru
    - Speak, and check that the speaking ring and the "hearing" count update.
    - Walk one person into Dev & QA and check that they stop hearing each other.
    - Have `van` enter Finance, then run `room revoke finance van`. Check that `van` is disconnected and cannot rejoin Finance voice.
+   - Both turn the camera on. Check that the macOS camera prompt appears on first use, that each webcam replaces that person's face for the other, that the camera is off again after walking into another room, and that a person outside the room never sees it.
 2. **Two physical Macs.** The services listen on loopback only by design. Use an SSH port forward for 47830, the realtime port and 7880–7882, or wait for a secured remote topology.
 3. **Release build on Intel.** `flutter build macos --release` produced a signed universal app: the app binary and `libmonastack_core.dylib` are both x86_64 + arm64, built by `bundle_core.sh` in Release. The arm64 release app launched and ran without core-load errors. The x86_64 slice has not been run, because this Mac has no Rosetta. Notarization and distribution are out of scope.
 

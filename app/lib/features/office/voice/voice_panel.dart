@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:monastack/features/office/voice/voice_controller.dart';
 
 /// Voice controls for the current room. Joining is explicit, the microphone
-/// starts muted, and failures point back to room chat.
+/// and camera start off, and failures point back to room chat.
 class VoicePanel extends StatelessWidget {
   const VoicePanel({
     super.key,
@@ -23,6 +23,7 @@ class VoicePanel extends StatelessWidget {
     valueListenable: controller,
     builder: (context, state, _) {
       final muted = !state.microphone;
+      final camera = state.camera;
       final others = state.participants.map((a) => names[a] ?? a).toList()
         ..sort();
       final speaking = state.speaking.map((a) => names[a] ?? a).toList()
@@ -36,11 +37,19 @@ class VoicePanel extends StatelessWidget {
               icon: Icon(muted ? Icons.mic_off : Icons.mic),
               color: muted ? null : const Color(0xff2f7a5f),
             ),
+            const SizedBox(width: 4),
+            IconButton.filledTonal(
+              tooltip: camera ? 'Turn camera off' : 'Turn camera on',
+              onPressed: () => controller.setCamera(!camera),
+              icon: Icon(camera ? Icons.videocam : Icons.videocam_off),
+              color: camera ? const Color(0xff2f7a5f) : null,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 [
                   muted ? 'Muted' : 'Microphone on',
+                  if (camera) 'camera on',
                   others.isEmpty
                       ? 'nobody else here'
                       : '${others.length} here, hearing ${state.hearing.length}',

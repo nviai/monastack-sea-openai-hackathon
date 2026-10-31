@@ -9,6 +9,7 @@ import 'package:monastack/features/office/world/office_world.dart';
 import 'package:monastack/features/organization/people_profiles.dart';
 import 'package:monastack/features/office/data/office_core.dart';
 import 'package:monastack/platform/core_bridge.dart';
+import 'package:monastack/shared/brand/monastack_logo.dart';
 
 final seedProvider = FutureProvider<Map<String, dynamic>>(
   (ref) async =>
@@ -52,11 +53,13 @@ class _OfficeState extends ConsumerState<Office> {
   final position = ValueNotifier<List<int>>(const [-1, -1]);
   final remote = ValueNotifier<List<Map<String, dynamic>>>([]);
   final speaking = ValueNotifier<Set<String>>(const {});
+  final faces = ValueNotifier<Map<String, Widget>>(const {});
   @override
   void dispose() {
     position.dispose();
     remote.dispose();
     speaking.dispose();
+    faces.dispose();
     super.dispose();
   }
 
@@ -157,14 +160,20 @@ class _OfficeState extends ConsumerState<Office> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'MONASTACK',
-                          style: TextStyle(
-                            color: Color(0xffd4e5ce),
-                            letterSpacing: 3,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
+                        const Row(
+                          children: [
+                            MonastackLogo(size: 34),
+                            SizedBox(width: 8),
+                            Text(
+                              'MONASTACK',
+                              style: TextStyle(
+                                color: Color(0xffd4e5ce),
+                                letterSpacing: 3,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 12),
                         const Text(
@@ -362,6 +371,7 @@ class _OfficeState extends ConsumerState<Office> {
                                     findPath(start, goal),
                                 locateRoom: locateRoom,
                                 speaking: speaking,
+                                faces: faces,
                                 accessibleRooms: accessibleRooms(rooms),
                                 onSelectActor: (id) {
                                   final profile = actors
@@ -432,6 +442,7 @@ class _OfficeState extends ConsumerState<Office> {
                           actors: actors,
                           rooms: rooms,
                           speaking: speaking,
+                          faces: faces,
                           onPermissions: (rooms) {
                             if (serverRooms != null &&
                                 serverRooms!.length == rooms.length &&

@@ -4,6 +4,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'package:monastack/features/office/world/office_map.dart';
@@ -37,6 +38,7 @@ class OfficeWorld extends StatefulWidget {
     this.accessibleRooms,
     this.onSelectActor,
     this.speaking,
+    this.faces,
   });
   final Map<String, dynamic> seed;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
@@ -52,6 +54,9 @@ class OfficeWorld extends StatefulWidget {
 
   /// Actors currently speaking in voice; drawn with a ring.
   final ValueListenable<Set<String>>? speaking;
+
+  /// Live camera views by actor. Each replaces that avatar's drawn face.
+  final ValueListenable<Map<String, Widget>>? faces;
   @override
   State<OfficeWorld> createState() => OfficeWorldState();
 }
@@ -86,6 +91,8 @@ class OfficeWorldState extends State<OfficeWorld> {
     widget.remote.addListener(updateRemote);
     updateRemote();
     widget.speaking?.addListener(_updateSpeaking);
+    widget.faces?.addListener(_updateFaces);
+    _updateFaces();
     _configure();
     load();
   }
@@ -96,6 +103,10 @@ class OfficeWorldState extends State<OfficeWorld> {
 
   void _updateSpeaking() {
     _game.speaking = widget.speaking?.value ?? const {};
+  }
+
+  void _updateFaces() {
+    _game.faces = widget.faces?.value.keys.toSet() ?? const {};
   }
 
   void _configure() {
@@ -229,6 +240,11 @@ class OfficeWorldState extends State<OfficeWorld> {
       widget.speaking?.addListener(_updateSpeaking);
       _updateSpeaking();
     }
+    if (oldWidget.faces != widget.faces) {
+      oldWidget.faces?.removeListener(_updateFaces);
+      widget.faces?.addListener(_updateFaces);
+      _updateFaces();
+    }
     if (oldWidget.remote != widget.remote) {
       oldWidget.remote.removeListener(updateRemote);
       widget.remote.addListener(updateRemote);
@@ -248,6 +264,7 @@ class OfficeWorldState extends State<OfficeWorld> {
   void dispose() {
     widget.remote.removeListener(updateRemote);
     widget.speaking?.removeListener(_updateSpeaking);
+    widget.faces?.removeListener(_updateFaces);
     focus.dispose();
     super.dispose();
   }
@@ -326,6 +343,10 @@ class OfficeWorldState extends State<OfficeWorld> {
             ),
           ),
         ),
+        if (widget.faces != null)
+          Positioned.fill(
+            child: FaceLayer(game: _game, faces: widget.faces!),
+          ),
         Positioned(
           right: 10,
           top: 10,
@@ -387,4 +408,97 @@ class OfficeWorldState extends State<OfficeWorld> {
       ],
     ),
   );
+}
+
+/// Live camera bubbles placed over the canvas where each avatar's face
+/// would be. Positions come from the game's last render; the layer only
+/// ticks while at least one camera is shown.
+class FaceLayer extends StatefulWidget {
+  const FaceLayer({super.key, required this.game, required this.faces});
+  final WorldGame game;
+  final ValueListenable<Map<String, Widget>> faces;
+
+  @override
+  State<FaceLayer> createState() => _FaceLayerState();
+}
+
+class _FaceLayerState extends State<FaceLayer>
+    with SingleTickerProviderStateMixin {
+  late final Ticker _ticker = createTicker((_) => setState(() {}));
+
+  @override
+  void initState() {
+    super.initState();
+    widget.faces.addListener(_changed);
+    _changed();
+  }
+
+  void _changed() {
+    final active = widget.faces.value.isNotEmpty;
+    if (active && !_ticker.isActive) _ticker.start();
+    if (!active && _ticker.isActive) _ticker.stop();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant FaceLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.faces != widget.faces) {
+      oldWidget.faces.removeListener(_changed);
+      widget.faces.addListener(_changed);
+      _changed();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.faces.removeListener(_changed);
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final views = widget.faces.value;
+    return IgnorePointer(
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          for (final slot in widget.game.faceSlots)
+            if (views[slot.actor] case final view?)
+              Positioned.fromRect(
+                key: ValueKey('face-${slot.actor}'),
+                rect: slot.rect,
+                child: Opacity(
+                  opacity: slot.behind ? .35 : 1,
+                  child: DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white,
+                        width: slot.diameter > 60 ? 3 : 2,
+                      ),
+                    ),
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xff2b3530),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(child: RepaintBoundary(child: view)),
+                    ),
+                  ),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
 }
