@@ -7,8 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:monastack/app/monastack_app.dart';
+import 'package:monastack/features/office/world/office_world.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Frame timing and memory for the office, idle and while the local avatar
+/// walks across the map with the camera following. Debug build, one run.
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
@@ -26,16 +29,41 @@ void main() {
     }
     expect(find.text('Connect'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
-    final timings = <ui.FrameTiming>[];
-    void collect(List<ui.FrameTiming> frames) => timings.addAll(frames);
-    WidgetsBinding.instance.addTimingsCallback(collect);
-    final stopwatch = Stopwatch()..start();
-    await tester.runAsync(
-      () async => Future<void>.delayed(const Duration(seconds: 5)),
-    );
-    stopwatch.stop();
-    await tester.pump();
-    WidgetsBinding.instance.removeTimingsCallback(collect);
+    final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
+    for (var i = 0; i < 40 && world.map == null; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    Future<String> measure(String label, Future<void> Function() during) async {
+      final timings = <ui.FrameTiming>[];
+      void collect(List<ui.FrameTiming> frames) => timings.addAll(frames);
+      WidgetsBinding.instance.addTimingsCallback(collect);
+      final stopwatch = Stopwatch()..start();
+      await during();
+      await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(seconds: 5)),
+      );
+      stopwatch.stop();
+      await tester.pump();
+      WidgetsBinding.instance.removeTimingsCallback(collect);
+      final build = timings.map((f) => f.buildDuration.inMicroseconds).toList()
+        ..sort();
+      final raster =
+          timings.map((f) => f.rasterDuration.inMicroseconds).toList()..sort();
+      int p95(List<int> samples) =>
+          samples.isEmpty ? 0 : samples[((samples.length - 1) * 0.95).ceil()];
+      final fps = timings.length * 1000 / stopwatch.elapsedMilliseconds;
+      return '$label frames=${timings.length} elapsed_ms=${stopwatch.elapsedMilliseconds} '
+          'fps=${fps.toStringAsFixed(1)} build_p95_us=${p95(build)} raster_p95_us=${p95(raster)} '
+          'rss_bytes=${ProcessInfo.currentRss}';
+    }
+
+    final idle = await measure('idle', () async {});
+    // Zoomed in, walking from the lobby to the far corner of Dev & QA.
+    await tester.tap(find.byTooltip('Center on me'));
+    final walking = await measure('walking', () async {
+      await tester.runAsync(() => world.moveTo([6, 2]));
+    });
     final image = await tester.runAsync(() async {
       final render =
           boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
@@ -49,14 +77,8 @@ void main() {
       return file.path;
     });
     expect(image, isNotNull);
-    final build = timings.map((f) => f.buildDuration.inMicroseconds).toList()
-      ..sort();
-    final raster = timings.map((f) => f.rasterDuration.inMicroseconds).toList()
-      ..sort();
-    int p95(List<int> samples) =>
-        samples.isEmpty ? 0 : samples[((samples.length - 1) * 0.95).ceil()];
-    debugPrint(
-      'MEASUREMENT screenshot=$image frames=${timings.length} elapsed_ms=${stopwatch.elapsedMilliseconds} build_p95_us=${p95(build)} raster_p95_us=${p95(raster)} rss_bytes=${ProcessInfo.currentRss} mode=debug harness=fully-live',
-    );
+    debugPrint('MEASUREMENT $idle mode=debug harness=fully-live');
+    debugPrint('MEASUREMENT $walking mode=debug harness=fully-live');
+    debugPrint('MEASUREMENT screenshot=$image');
   });
 }

@@ -1,0 +1,1336 @@
+{
+ "version": 2,
+ "width": 30,
+ "height": 27,
+ "tile": {
+  "width": 64,
+  "height": 32,
+  "wall_height": 48,
+  "low_wall_height": 12
+ },
+ "spawn": [
+  14,
+  13
+ ],
+ "corridor": {
+  "room": "lobby",
+  "floor": "#dfe3d8"
+ },
+ "rooms": [
+  {
+   "id": "dev",
+   "bounds": [
+    0,
+    0,
+    7,
+    6
+   ],
+   "doors": [
+    [
+     3,
+     6
+    ],
+    [
+     4,
+     6
+    ]
+   ],
+   "spawn": [
+    3,
+    3
+   ],
+   "zone": "dev-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#ece3d3",
+    "pattern": "wood",
+    "accent": "#7f9fbf"
+   }
+  },
+  {
+   "id": "product",
+   "bounds": [
+    10,
+    0,
+    19,
+    6
+   ],
+   "doors": [
+    [
+     14,
+     6
+    ],
+    [
+     15,
+     6
+    ]
+   ],
+   "spawn": [
+    13,
+    4
+   ],
+   "zone": "product-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#efe4d8",
+    "pattern": "wood",
+    "accent": "#b48fbf"
+   }
+  },
+  {
+   "id": "meeting",
+   "bounds": [
+    22,
+    0,
+    29,
+    6
+   ],
+   "doors": [
+    [
+     25,
+     6
+    ],
+    [
+     26,
+     6
+    ]
+   ],
+   "spawn": [
+    25,
+    4
+   ],
+   "zone": "meeting-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#e4e6e0",
+    "pattern": "carpet",
+    "accent": "#8fa8a0"
+   }
+  },
+  {
+   "id": "sales",
+   "bounds": [
+    0,
+    9,
+    7,
+    17
+   ],
+   "doors": [
+    [
+     7,
+     12
+    ],
+    [
+     7,
+     13
+    ]
+   ],
+   "spawn": [
+    4,
+    13
+   ],
+   "zone": "sales-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#f1e2d2",
+    "pattern": "wood",
+    "accent": "#d79b6b"
+   }
+  },
+  {
+   "id": "lobby",
+   "bounds": [
+    10,
+    9,
+    19,
+    17
+   ],
+   "doors": [
+    [
+     12,
+     9
+    ],
+    [
+     13,
+     9
+    ],
+    [
+     16,
+     17
+    ],
+    [
+     17,
+     17
+    ],
+    [
+     10,
+     14
+    ],
+    [
+     10,
+     15
+    ],
+    [
+     19,
+     11
+    ],
+    [
+     19,
+     12
+    ]
+   ],
+   "spawn": [
+    14,
+    13
+   ],
+   "zone": "lobby-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#f3ece0",
+    "pattern": "tile",
+    "accent": "#4c7468"
+   }
+  },
+  {
+   "id": "support",
+   "bounds": [
+    22,
+    9,
+    29,
+    17
+   ],
+   "doors": [
+    [
+     22,
+     12
+    ],
+    [
+     22,
+     13
+    ]
+   ],
+   "spawn": [
+    25,
+    13
+   ],
+   "zone": "support-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#e6ece2",
+    "pattern": "carpet",
+    "accent": "#79a88a"
+   }
+  },
+  {
+   "id": "hr",
+   "bounds": [
+    0,
+    20,
+    7,
+    26
+   ],
+   "doors": [
+    [
+     3,
+     20
+    ],
+    [
+     4,
+     20
+    ]
+   ],
+   "spawn": [
+    3,
+    23
+   ],
+   "zone": "hr-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#ebe4ec",
+    "pattern": "carpet",
+    "accent": "#a58fb5"
+   }
+  },
+  {
+   "id": "lounge",
+   "bounds": [
+    10,
+    20,
+    19,
+    26
+   ],
+   "doors": [
+    [
+     14,
+     20
+    ],
+    [
+     15,
+     20
+    ]
+   ],
+   "spawn": [
+    16,
+    23
+   ],
+   "zone": "lounge-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#f2e6dc",
+    "pattern": "wood",
+    "accent": "#d58f7c"
+   }
+  },
+  {
+   "id": "finance",
+   "bounds": [
+    22,
+    20,
+    29,
+    26
+   ],
+   "doors": [
+    [
+     25,
+     20
+    ],
+    [
+     26,
+     20
+    ]
+   ],
+   "spawn": [
+    25,
+    23
+   ],
+   "zone": "finance-zone",
+   "elevation": 0,
+   "style": {
+    "floor": "#e3e9ef",
+    "pattern": "carpet",
+    "accent": "#6f8fb0"
+   }
+  }
+ ],
+ "zones": [
+  {
+   "id": "dev-zone",
+   "room": "dev",
+   "acoustics": "room"
+  },
+  {
+   "id": "product-zone",
+   "room": "product",
+   "acoustics": "room"
+  },
+  {
+   "id": "meeting-zone",
+   "room": "meeting",
+   "acoustics": "room"
+  },
+  {
+   "id": "sales-zone",
+   "room": "sales",
+   "acoustics": "room"
+  },
+  {
+   "id": "lobby-zone",
+   "room": "lobby",
+   "acoustics": "room"
+  },
+  {
+   "id": "support-zone",
+   "room": "support",
+   "acoustics": "room"
+  },
+  {
+   "id": "hr-zone",
+   "room": "hr",
+   "acoustics": "room"
+  },
+  {
+   "id": "lounge-zone",
+   "room": "lounge",
+   "acoustics": "room"
+  },
+  {
+   "id": "finance-zone",
+   "room": "finance",
+   "acoustics": "room"
+  }
+ ],
+ "props": [
+  {
+   "id": "lobby-sign",
+   "type": "sign",
+   "position": [
+    14,
+    9
+   ],
+   "footprint": [
+    4,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall",
+   "text": "NVIAI"
+  },
+  {
+   "id": "lobby-products",
+   "type": "screen",
+   "position": [
+    10,
+    11
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall",
+   "text": "Meslingo\nMonastack"
+  },
+  {
+   "id": "lobby-reception",
+   "type": "counter",
+   "position": [
+    15,
+    12
+   ],
+   "footprint": [
+    3,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "lobby-rug",
+   "type": "rug",
+   "position": [
+    12,
+    13
+   ],
+   "footprint": [
+    4,
+    3
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "floor"
+  },
+  {
+   "id": "lobby-plant-1",
+   "type": "plant",
+   "position": [
+    11,
+    10
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lobby-plant-2",
+   "type": "plant",
+   "position": [
+    18,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lobby-plant-3",
+   "type": "plant",
+   "position": [
+    11,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lobby-sofa",
+   "type": "sofa",
+   "position": [
+    12,
+    16
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "n"
+  },
+  {
+   "id": "dev-desk-1",
+   "type": "desk",
+   "position": [
+    1,
+    1
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "dev-desk-2",
+   "type": "desk",
+   "position": [
+    4,
+    1
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "dev-desk-3",
+   "type": "desk",
+   "position": [
+    1,
+    4
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "dev-desk-4",
+   "type": "desk",
+   "position": [
+    5,
+    4
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "dev-plant",
+   "type": "plant",
+   "position": [
+    6,
+    1
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "dev-whiteboard",
+   "type": "whiteboard",
+   "position": [
+    0,
+    2
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "product-desk-1",
+   "type": "desk",
+   "position": [
+    11,
+    1
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "product-desk-2",
+   "type": "desk",
+   "position": [
+    16,
+    1
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "product-standup",
+   "type": "table",
+   "position": [
+    14,
+    3
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "product-board",
+   "type": "board",
+   "position": [
+    13,
+    0
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "product-plant-1",
+   "type": "plant",
+   "position": [
+    18,
+    5
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "product-plant-2",
+   "type": "plant",
+   "position": [
+    11,
+    5
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "meeting-table",
+   "type": "meeting_table",
+   "position": [
+    24,
+    2
+   ],
+   "footprint": [
+    4,
+    2
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "meeting-screen",
+   "type": "screen",
+   "position": [
+    25,
+    0
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "meeting-plant-1",
+   "type": "plant",
+   "position": [
+    23,
+    5
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "meeting-plant-2",
+   "type": "plant",
+   "position": [
+    28,
+    1
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "sales-desk",
+   "type": "desk",
+   "position": [
+    1,
+    10
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "e"
+  },
+  {
+   "id": "sales-shelf",
+   "type": "shelf",
+   "position": [
+    3,
+    9
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "sales-sofa",
+   "type": "sofa",
+   "position": [
+    3,
+    16
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "n"
+  },
+  {
+   "id": "sales-plant-1",
+   "type": "plant",
+   "position": [
+    6,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "sales-plant-2",
+   "type": "plant",
+   "position": [
+    1,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "support-desk-1",
+   "type": "desk",
+   "position": [
+    24,
+    10
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "support-desk-2",
+   "type": "desk",
+   "position": [
+    27,
+    13
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "w"
+  },
+  {
+   "id": "support-board",
+   "type": "board",
+   "position": [
+    27,
+    9
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "support-sofa",
+   "type": "sofa",
+   "position": [
+    25,
+    16
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "n"
+  },
+  {
+   "id": "support-plant-1",
+   "type": "plant",
+   "position": [
+    28,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "support-plant-2",
+   "type": "plant",
+   "position": [
+    28,
+    10
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "hr-desk",
+   "type": "desk",
+   "position": [
+    5,
+    22
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "w"
+  },
+  {
+   "id": "hr-cabinet",
+   "type": "cabinet",
+   "position": [
+    1,
+    21
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "hr-plant",
+   "type": "plant",
+   "position": [
+    6,
+    25
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lounge-rug",
+   "type": "rug",
+   "position": [
+    12,
+    22
+   ],
+   "footprint": [
+    4,
+    3
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "floor"
+  },
+  {
+   "id": "lounge-sofa-1",
+   "type": "sofa",
+   "position": [
+    11,
+    22
+   ],
+   "footprint": [
+    1,
+    3
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "e"
+  },
+  {
+   "id": "lounge-sofa-2",
+   "type": "sofa",
+   "position": [
+    13,
+    25
+   ],
+   "footprint": [
+    3,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "n"
+  },
+  {
+   "id": "lounge-table",
+   "type": "side_table",
+   "position": [
+    13,
+    23
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lounge-coffee",
+   "type": "coffee_bar",
+   "position": [
+    17,
+    21
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "s"
+  },
+  {
+   "id": "lounge-art",
+   "type": "art",
+   "position": [
+    11,
+    20
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": false,
+   "mount": "wall"
+  },
+  {
+   "id": "lounge-plant-1",
+   "type": "plant",
+   "position": [
+    18,
+    25
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "lounge-plant-2",
+   "type": "plant",
+   "position": [
+    11,
+    21
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "finance-desk",
+   "type": "desk",
+   "position": [
+    27,
+    22
+   ],
+   "footprint": [
+    1,
+    2
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor",
+   "facing": "w"
+  },
+  {
+   "id": "finance-cabinet",
+   "type": "cabinet",
+   "position": [
+    23,
+    21
+   ],
+   "footprint": [
+    2,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "finance-safe",
+   "type": "safe",
+   "position": [
+    23,
+    25
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  },
+  {
+   "id": "finance-plant",
+   "type": "plant",
+   "position": [
+    28,
+    25
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "elevation": 0,
+   "collision": true,
+   "mount": "floor"
+  }
+ ],
+ "desks": [
+  {
+   "id": "seat-mona",
+   "room": "lobby",
+   "prop": "lobby-reception",
+   "seat": [
+    16,
+    11
+   ],
+   "assignee": "mona"
+  },
+  {
+   "id": "seat-hung",
+   "room": "dev",
+   "prop": "dev-desk-1",
+   "seat": [
+    1,
+    2
+   ],
+   "assignee": "hung"
+  },
+  {
+   "id": "seat-tuan",
+   "room": "dev",
+   "prop": "dev-desk-1",
+   "seat": [
+    2,
+    2
+   ],
+   "assignee": "tuan"
+  },
+  {
+   "id": "seat-le-pha",
+   "room": "dev",
+   "prop": "dev-desk-2",
+   "seat": [
+    4,
+    2
+   ],
+   "assignee": "le-pha"
+  },
+  {
+   "id": "seat-hua-hao",
+   "room": "dev",
+   "prop": "dev-desk-2",
+   "seat": [
+    5,
+    2
+   ],
+   "assignee": "hua-hao"
+  },
+  {
+   "id": "seat-le-triet",
+   "room": "dev",
+   "prop": "dev-desk-3",
+   "seat": [
+    1,
+    5
+   ],
+   "assignee": "le-triet"
+  },
+  {
+   "id": "seat-linh",
+   "room": "dev",
+   "prop": "dev-desk-3",
+   "seat": [
+    2,
+    5
+   ],
+   "assignee": "linh"
+  },
+  {
+   "id": "seat-dev-agent",
+   "room": "dev",
+   "prop": "dev-desk-4",
+   "seat": [
+    5,
+    5
+   ],
+   "assignee": "dev-agent"
+  },
+  {
+   "id": "seat-qa-agent",
+   "room": "dev",
+   "prop": "dev-desk-4",
+   "seat": [
+    6,
+    5
+   ],
+   "assignee": "qa-agent"
+  },
+  {
+   "id": "seat-thao",
+   "room": "product",
+   "prop": "product-desk-1",
+   "seat": [
+    11,
+    2
+   ],
+   "assignee": "thao"
+  },
+  {
+   "id": "seat-pm-agent",
+   "room": "product",
+   "prop": "product-desk-1",
+   "seat": [
+    12,
+    2
+   ],
+   "assignee": "pm-agent"
+  },
+  {
+   "id": "seat-an",
+   "room": "product",
+   "prop": "product-desk-2",
+   "seat": [
+    16,
+    2
+   ],
+   "assignee": "an"
+  },
+  {
+   "id": "seat-product-17-2",
+   "room": "product",
+   "prop": "product-desk-2",
+   "seat": [
+    17,
+    2
+   ],
+   "assignee": null
+  },
+  {
+   "id": "seat-mai",
+   "room": "sales",
+   "prop": "sales-desk",
+   "seat": [
+    2,
+    10
+   ],
+   "assignee": "mai"
+  },
+  {
+   "id": "seat-sales-agent",
+   "room": "sales",
+   "prop": "sales-desk",
+   "seat": [
+    2,
+    11
+   ],
+   "assignee": "sales-agent"
+  },
+  {
+   "id": "seat-duc",
+   "room": "support",
+   "prop": "support-desk-1",
+   "seat": [
+    24,
+    11
+   ],
+   "assignee": "duc"
+  },
+  {
+   "id": "seat-cskh-agent",
+   "room": "support",
+   "prop": "support-desk-1",
+   "seat": [
+    25,
+    11
+   ],
+   "assignee": "cskh-agent"
+  },
+  {
+   "id": "seat-support-26-13",
+   "room": "support",
+   "prop": "support-desk-2",
+   "seat": [
+    26,
+    13
+   ],
+   "assignee": null
+  },
+  {
+   "id": "seat-hr-4-22",
+   "room": "hr",
+   "prop": "hr-desk",
+   "seat": [
+    4,
+    22
+   ],
+   "assignee": null
+  },
+  {
+   "id": "seat-van",
+   "room": "finance",
+   "prop": "finance-desk",
+   "seat": [
+    26,
+    22
+   ],
+   "assignee": "van"
+  }
+ ]
+}

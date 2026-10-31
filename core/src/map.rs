@@ -1,6 +1,10 @@
-//! Grid geometry for the prototype office. Coordinates are world cells, not pixels.
+//! Grid geometry for the office. Coordinates are world cells, not pixels.
+//! Rendering hints in the map document (styles, prop types) are ignored here.
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque};
+
+pub const MAP_VERSION: u32 = 2;
+
 #[derive(Debug, Deserialize)]
 pub struct Map {
     pub version: u32,
@@ -12,11 +16,22 @@ pub struct Map {
     pub zones: Vec<Zone>,
     #[serde(default)]
     pub props: Vec<Prop>,
+    #[serde(default)]
+    pub desks: Vec<Desk>,
 }
 #[derive(Debug, Deserialize)]
 pub struct Zone {
     pub id: String,
     pub room: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Mount {
+    /// Stands on interior or corridor floor cells.
+    #[default]
+    Floor,
+    /// Decoration on a room's wall cells; never collides.
+    Wall,
 }
 #[derive(Debug, Deserialize)]
 pub struct Prop {
@@ -24,6 +39,8 @@ pub struct Prop {
     pub position: [i32; 2],
     pub footprint: [i32; 2],
     pub collision: bool,
+    #[serde(default)]
+    pub mount: Mount,
 }
 impl Prop {
     fn contains(&self, point: [i32; 2]) -> bool {
@@ -32,14 +49,27 @@ impl Prop {
         let [width, height] = self.footprint.map(i64::from);
         x >= px && x < px + width && y >= py && y < py + height
     }
+    fn cells(&self) -> impl Iterator<Item = [i32; 2]> + '_ {
+        let [x, y] = self.position;
+        let [w, h] = self.footprint;
+        (x..x + w).flat_map(move |px| (y..y + h).map(move |py| [px, py]))
+    }
+}
+/// A seat assignment. `assignee` is a seed actor ID or an unassigned seat.
+#[derive(Debug, Deserialize)]
+pub struct Desk {
+    pub id: String,
+    pub room: String,
+    pub prop: String,
+    pub seat: [i32; 2],
+    pub assignee: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 pub struct Room {
     pub id: String,
     pub bounds: [i32; 4],
-    pub door: [i32; 2],
+    pub doors: Vec<[i32; 2]>,
     pub spawn: [i32; 2],
-    pub desk: [i32; 2],
     pub zone: String,
 }
 impl Room {
@@ -49,13 +79,19 @@ impl Room {
             && p[1] >= self.bounds[1]
             && p[1] <= self.bounds[3]
     }
-    fn wall(&self, p: [i32; 2]) -> bool {
+    fn perimeter(&self, p: [i32; 2]) -> bool {
         self.contains(p)
             && (p[0] == self.bounds[0]
                 || p[0] == self.bounds[2]
                 || p[1] == self.bounds[1]
                 || p[1] == self.bounds[3])
-            && p != self.door
+    }
+    fn corner(&self, p: [i32; 2]) -> bool {
+        (p[0] == self.bounds[0] || p[0] == self.bounds[2])
+            && (p[1] == self.bounds[1] || p[1] == self.bounds[3])
+    }
+    fn wall(&self, p: [i32; 2]) -> bool {
+        self.perimeter(p) && !self.doors.contains(&p)
     }
 }
 impl Map {
@@ -114,7 +150,7 @@ impl Map {
         None
     }
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.version != 1
+        if self.version != MAP_VERSION
             || self.width <= 0
             || self.height <= 0
             || self.width > 256
@@ -142,15 +178,10 @@ impl Map {
                     }
                 }
             }
-            if !r.contains(r.door)
+            if r.doors.is_empty()
+                || r.doors.iter().any(|d| !r.perimeter(*d) || r.corner(*d))
                 || !r.contains(r.spawn)
-                || !r.contains(r.desk)
-                || r.wall(r.spawn)
-                || r.wall(r.desk)
-                || !(r.door[0] == r.bounds[0]
-                    || r.door[0] == r.bounds[2]
-                    || r.door[1] == r.bounds[1]
-                    || r.door[1] == r.bounds[3])
+                || r.perimeter(r.spawn)
             {
                 return Err("invalid anchor");
             }
@@ -189,38 +220,88 @@ impl Map {
             {
                 return Err("invalid prop geometry");
             }
-            if prop.collision {
-                for px in x..x + width {
-                    for py in y..y + height {
-                        if !solid_cells.insert([px, py]) {
-                            return Err("overlapping solid props");
+            match prop.mount {
+                Mount::Wall => {
+                    if prop.collision
+                        || !prop
+                            .cells()
+                            .all(|c| self.rooms.iter().any(|room| room.wall(c)))
+                    {
+                        return Err("wall prop must sit on wall cells");
+                    }
+                }
+                Mount::Floor => {
+                    for cell in prop.cells() {
+                        if self.rooms.iter().any(|room| room.perimeter(cell)) {
+                            return Err(if prop.collision {
+                                "solid prop overlaps wall"
+                            } else {
+                                "floor prop overlaps wall"
+                            });
                         }
-                        if self.rooms.iter().any(|room| room.wall([px, py])) {
-                            return Err("solid prop overlaps wall");
+                        if prop.collision && !solid_cells.insert(cell) {
+                            return Err("overlapping solid props");
                         }
                     }
                 }
+            }
+        }
+        let mut desk_ids = HashSet::new();
+        let mut assignees = HashSet::new();
+        for desk in &self.desks {
+            let Some(room) = self.rooms.iter().find(|r| r.id == desk.room) else {
+                return Err("invalid desk");
+            };
+            let Some(prop) = self
+                .props
+                .iter()
+                .find(|p| p.id == desk.prop && p.collision && p.mount == Mount::Floor)
+            else {
+                return Err("invalid desk");
+            };
+            let beside = prop
+                .cells()
+                .any(|[px, py]| (px - desk.seat[0]).abs() + (py - desk.seat[1]).abs() == 1);
+            if !desk_ids.insert(&desk.id)
+                || !room.contains(desk.seat)
+                || room.perimeter(desk.seat)
+                || !prop.cells().all(|c| room.contains(c))
+                || !beside
+                || desk
+                    .assignee
+                    .as_ref()
+                    .is_some_and(|a| a.trim().is_empty() || !assignees.insert(a))
+            {
+                return Err("invalid desk");
             }
         }
         let all = self.rooms.iter().map(|r| r.id.clone()).collect();
         if !self.walkable(self.spawn, &all) {
             return Err("invalid spawn");
         }
-        for r in &self.rooms {
-            for p in [r.door, r.spawn, r.desk] {
-                if self.path(self.spawn, p, &all).is_none() {
-                    return Err("unreachable anchor");
-                }
+        let anchors = self
+            .rooms
+            .iter()
+            .flat_map(|r| r.doors.iter().copied().chain([r.spawn]))
+            .chain(self.desks.iter().map(|d| d.seat));
+        for p in anchors {
+            if self.path(self.spawn, p, &all).is_none() {
+                return Err("unreachable anchor");
             }
         }
         Ok(())
+    }
+
+    /// Room containing the cell. Corridor cells belong to no room.
+    pub fn room_at(&self, p: [i32; 2]) -> Option<&Room> {
+        self.rooms.iter().find(|r| r.contains(p))
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     fn map() -> Map {
-        serde_json::from_str(include_str!("../../data/seed/nviai/map.v1.json")).unwrap()
+        serde_json::from_str(include_str!("../../data/seed/nviai/map.v2.json")).unwrap()
     }
     #[test]
     fn seed_map_is_valid_and_paths_reach_all_anchors() {
@@ -237,7 +318,10 @@ mod tests {
             .collect();
         let finance = m.rooms.iter().find(|r| r.id == "finance").unwrap();
         assert!(m.path(m.spawn, finance.spawn, &allowed).is_none());
-        assert!(m.path(m.spawn, [17, 17], &allowed).is_some());
+        assert!(m.path(m.spawn, [9, 9], &allowed).is_some());
+        // Corridors belong to no room.
+        assert!(m.room_at([9, 9]).is_none());
+        assert_eq!(m.room_at(m.spawn).map(|r| r.id.as_str()), Some("lobby"));
     }
     #[test]
     fn overlap_is_rejected() {
@@ -250,16 +334,17 @@ mod tests {
         let mut m = map();
         m.props.push(Prop {
             id: "synthetic-obstacle".into(),
-            position: [2, 1],
+            position: [14, 11],
             footprint: [1, 1],
             collision: true,
+            mount: Mount::Floor,
         });
         assert_eq!(m.validate(), Ok(()));
         let all = m.rooms.iter().map(|room| room.id.clone()).collect();
-        assert!(!m.walkable([2, 1], &all));
-        let path = m.path([1, 1], [3, 1], &all).unwrap();
+        assert!(!m.walkable([14, 11], &all));
+        let path = m.path([13, 11], [15, 11], &all).unwrap();
         assert!(path.len() > 3);
-        assert!(!path.contains(&[2, 1]));
+        assert!(!path.contains(&[14, 11]));
     }
     #[test]
     fn invalid_or_overlapping_solid_geometry_is_rejected() {
@@ -269,15 +354,17 @@ mod tests {
             position: [17, 17],
             footprint: [i32::MAX, 1],
             collision: true,
+            mount: Mount::Floor,
         });
         assert_eq!(m.validate(), Err("invalid prop geometry"));
         m.props.pop();
         for id in ["one", "two"] {
             m.props.push(Prop {
                 id: id.into(),
-                position: [5, 5],
+                position: [8, 3],
                 footprint: [1, 1],
                 collision: true,
+                mount: Mount::Floor,
             });
         }
         assert_eq!(m.validate(), Err("overlapping solid props"));
@@ -290,6 +377,7 @@ mod tests {
             position: m.spawn,
             footprint: [1, 1],
             collision: true,
+            mount: Mount::Floor,
         });
         assert_eq!(m.validate(), Err("invalid spawn"));
     }
@@ -297,10 +385,11 @@ mod tests {
     fn obstacle_cannot_disconnect_room_anchors() {
         let mut m = map();
         m.props.push(Prop {
-            id: "blocked-crossing".into(),
-            position: [5, 5],
-            footprint: [1, 1],
+            id: "blocked-entrance".into(),
+            position: [3, 5],
+            footprint: [2, 1],
             collision: true,
+            mount: Mount::Floor,
         });
         assert_eq!(m.validate(), Err("unreachable anchor"));
     }
@@ -312,6 +401,7 @@ mod tests {
             position: [0, 0],
             footprint: [1, 1],
             collision: true,
+            mount: Mount::Floor,
         });
         assert_eq!(m.validate(), Err("solid prop overlaps wall"));
     }
@@ -326,5 +416,50 @@ mod tests {
         m = map();
         m.zones[1].id = m.zones[0].id.clone();
         assert_eq!(m.validate(), Err("invalid zone reference"));
+    }
+    #[test]
+    fn doors_must_be_on_a_wall_and_not_a_corner() {
+        let mut m = map();
+        m.rooms[0].doors.push([0, 0]);
+        assert_eq!(m.validate(), Err("invalid anchor"));
+        m = map();
+        m.rooms[0].doors.push([3, 3]);
+        assert_eq!(m.validate(), Err("invalid anchor"));
+        m = map();
+        m.version = 1;
+        assert_eq!(m.validate(), Err("invalid map dimensions or version"));
+    }
+    #[test]
+    fn wall_props_cannot_collide_or_leave_the_wall() {
+        let mut m = map();
+        m.props.push(Prop {
+            id: "floating-sign".into(),
+            position: [3, 3],
+            footprint: [1, 1],
+            collision: false,
+            mount: Mount::Wall,
+        });
+        assert_eq!(m.validate(), Err("wall prop must sit on wall cells"));
+        m.props.last_mut().unwrap().position = [0, 3];
+        assert_eq!(m.validate(), Ok(()));
+        m.props.last_mut().unwrap().collision = true;
+        assert_eq!(m.validate(), Err("wall prop must sit on wall cells"));
+    }
+    #[test]
+    fn desks_need_an_adjacent_seat_and_unique_assignees() {
+        let m = map();
+        assert!(m
+            .desks
+            .iter()
+            .any(|d| d.assignee.as_deref() == Some("mona")));
+        let mut m = map();
+        m.desks[1].seat = [3, 3];
+        assert_eq!(m.validate(), Err("invalid desk"));
+        let mut m = map();
+        m.desks[2].assignee = m.desks[1].assignee.clone();
+        assert_eq!(m.validate(), Err("invalid desk"));
+        let mut m = map();
+        m.desks[1].prop = "dev-whiteboard".into();
+        assert_eq!(m.validate(), Err("invalid desk"));
     }
 }

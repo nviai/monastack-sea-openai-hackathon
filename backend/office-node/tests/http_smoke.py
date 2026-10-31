@@ -14,6 +14,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from realtime_client import Realtime, ticket
+
 binary = Path(__file__).resolve().parents[1] / 'target/debug/monastack-office-node'
 with tempfile.TemporaryDirectory(prefix='monastack-test-') as directory:
     db = Path(directory) / 'office.sqlite3'
@@ -626,19 +628,26 @@ with tempfile.TemporaryDirectory(prefix='monastack-test-') as directory:
         lobby='messages/'+urllib.parse.quote('room:lobby',safe='')
         assert request('an','POST',lobby,{'id':secrets.token_hex(16),'body':'hello'})[0]==201
         assert len(request('van','GET',lobby)[1])==1
+        # Presence lives in the realtime capability and is authorized by tickets.
+        rt = {who: Realtime(port, tokens[who]) for who in ('an', 'van')}
         sessions = {who: secrets.token_hex(16) for who in ('an', 'van')}
         for who in sessions:
-            assert request(who,'POST','presence',{'session':sessions[who],'room':'lobby','x':1,'y':2,'seq':1})[0]==204
-        assert len(request('an','GET','presence')[1])==2
-        assert request('van','POST','presence',{'session':sessions['van'],'room':'lobby','x':2,'y':3,'seq':2})[0]==204
-        visible = request('an','GET','presence')[1]
-        assert any(p['actor']=='van' and p['x']==2 and p['y']==3 for p in visible)
-        assert request('an','POST','presence',{'session':sessions['an'],'room':'lobby','x':2,'y':14,'seq':2})[0]==403
-        assert request('an','POST','presence',{'session':sessions['an'],'room':'lobby','x':0,'y':0,'seq':2})[0]==403
-        assert request('an','DELETE','presence/'+sessions['van'])[0]==204
-        assert len(request('an','GET','presence')[1])==2
-        assert request('van','DELETE','presence/'+sessions['van'])[0]==204
-        assert len(request('an','GET','presence')[1])==1
+            assert rt[who].publish(sessions[who],'lobby',12,12,1)==204
+        assert len(rt['an'].presence())==2
+        assert rt['van'].publish(sessions['van'],'lobby',13,12,2)==204
+        visible = rt['an'].presence()
+        assert any(p['actor']=='van' and p['x']==13 and p['y']==12 for p in visible)
+        assert rt['an'].publish(sessions['an'],'lobby',25,23,2)==403
+        assert rt['an'].publish(sessions['an'],'lobby',0,0,2)==403
+        assert rt['an'].publish(sessions['an'],'finance',25,23,2)==403
+        assert rt['an'].publish(sessions['an'],'lobby',9,9,2)==204
+        assert rt['an'].leave(sessions['van'])==204
+        assert len(rt['an'].presence())==2
+        assert rt['van'].leave(sessions['van'])==204
+        assert len(rt['an'].presence())==1
+        assert rt['an'].request('GET','presence',ticket_override='00.00')[0]==401
+        status, _ = rt['an'].request('GET','presence',ticket_override=tokens['an'])
+        assert status==401
         stop(); start()
         assert request('an','GET','me')[1]['authority_id']==authority_id
         assert len(request('van','GET',path)[1])==1
@@ -698,10 +707,15 @@ with tempfile.TemporaryDirectory(prefix='monastack-test-') as directory:
         assert request('van','GET',f'projects/{private_project}/tasks')[0]==404
         assert request('mai','GET','customers')[0]==403
         session=secrets.token_hex(16)
-        assert request('van','POST','presence',{'session':session,'room':'lobby','x':2,'y':2,'seq':1})[0]==204
+        van_rt, an_rt = Realtime(port, tokens['van']), Realtime(port, tokens['an'])
+        van_ticket, realtime_url = ticket(port, tokens['van'])
+        assert van_rt.publish(session,'lobby',14,13,1)==204
         subprocess.run([str(binary),'revoke'],env=env,input=tokens['van'],text=True,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         assert request('van','GET','me')[0]==401
-        assert all(p['actor']!='van' for p in request('an','GET','presence')[1])
+        # The credential change advances the epoch: the unexpired ticket and
+        # its presence stop working without waiting for expiry.
+        assert all(p['actor']!='van' for p in an_rt.presence())
+        assert an_rt.request('GET','presence',ticket_override=van_ticket)[0]==401
         assert request('an','GET','me')[0]==200
         duplicate_revoke=subprocess.run([str(binary),'revoke'],env=env,input=tokens['van'],text=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         assert duplicate_revoke.returncode!=0

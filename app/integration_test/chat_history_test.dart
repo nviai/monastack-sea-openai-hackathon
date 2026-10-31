@@ -68,7 +68,10 @@ void main() {
     );
     final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
     world.goToRoom('finance');
-    await until(() => world.current.toString() == '[2, 14]', 'finance reached');
+    await until(
+      () => world.current.toString() == '[25, 23]',
+      'finance reached',
+    );
     // The UI reports position asynchronously; allow its scope refresh to complete.
     await until(
       () => find.textContaining('van: synthetic history').evaluate().isNotEmpty,

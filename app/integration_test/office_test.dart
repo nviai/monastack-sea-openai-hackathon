@@ -32,25 +32,25 @@ void main() {
       expect(
         await core.findPath(
           actor: 'an',
-          start: const Cell(x: 2, y: 2),
-          goal: const Cell(x: 8, y: 2),
+          start: const Cell(x: 14, y: 13),
+          goal: const Cell(x: 3, y: 3),
         ),
         isNotEmpty,
       );
       tester
           .widget<ListTile>(find.widgetWithText(ListTile, 'Dev & QA'))
           .onTap!();
-      for (var i = 0; i < 200 && world.current.toString() != '[8, 2]'; i++) {
+      for (var i = 0; i < 200 && world.current.toString() != '[3, 3]'; i++) {
         tester.binding.scheduleForcedFrame();
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(world.current, [8, 2]);
+      expect(world.current, [3, 3]);
       tester
           .widget<ListTile>(find.widgetWithText(ListTile, 'Finance'))
           .onTap!();
       await tester.pump();
       expect(find.textContaining('Access denied'), findsOneWidget);
-      expect(world.current, [8, 2]);
+      expect(world.current, [3, 3]);
     },
   );
 }

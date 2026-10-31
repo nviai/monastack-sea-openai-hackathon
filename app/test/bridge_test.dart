@@ -14,13 +14,13 @@ void main() {
     await CoreBridge.ensureInitialized();
     core = await OfficeCore.load(
       seedJson: File('assets/seed.v1.json').readAsStringSync(),
-      mapJson: File('assets/map.v1.json').readAsStringSync(),
+      mapJson: File('assets/map.v2.json').readAsStringSync(),
     );
   });
   tearDownAll(() => core.dispose());
 
-  const lobby = Cell(x: 2, y: 2);
-  const finance = Cell(x: 2, y: 14);
+  const lobby = Cell(x: 14, y: 13);
+  const finance = Cell(x: 25, y: 23);
 
   test('generated bridge enforces seed membership asynchronously', () async {
     expect(core.mayEnter(actor: 'van', room: 'finance'), isTrue);
@@ -93,9 +93,8 @@ void main() {
         state: 'delivered',
       ),
       throwsA(
-        coreError(
-          CoreErrorKind.outbox,
-        ).having((e) => e.detail, 'detail', 'not_pending'),
+        coreError(CoreErrorKind.outbox)
+            .having((e) => e.detail, 'detail', 'not_pending'),
       ),
     );
     expect(await outboxList(dbPath: db, actor: 'a_an'), isEmpty);

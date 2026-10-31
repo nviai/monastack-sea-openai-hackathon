@@ -8,8 +8,10 @@ mod incidents;
 mod jobs;
 mod journals;
 mod leave;
+mod media;
 mod meetings;
 mod payments;
+mod realtime;
 mod room_admin;
 mod sales;
 mod support;
@@ -365,145 +367,146 @@ async fn send_message(
     tx.commit().map_err(db_error)?;
     Ok(StatusCode::CREATED)
 }
-#[derive(Deserialize)]
-struct UpdatePresence {
-    session: String,
-    room: String,
-    x: f64,
-    y: f64,
-    seq: i64,
-}
-#[derive(Serialize)]
-struct Presence {
-    session: String,
-    actor: String,
-    room: String,
-    x: f64,
-    y: f64,
-    seq: i64,
-}
-async fn update_presence(
-    State(state): State<Db>,
-    headers: HeaderMap,
-    Json(p): Json<UpdatePresence>,
-) -> Result<StatusCode, ApiError> {
-    if p.session.len() < 16
-        || p.session.len() > 80
-        || !p.x.is_finite()
-        || !p.y.is_finite()
-        || p.x.abs() > 10000.
-        || p.y.abs() > 10000.
-        || p.seq < 0
-    {
-        return Err(err(StatusCode::BAD_REQUEST, "invalid presence"));
-    }
-    let mut db = state.lock().unwrap();
-    let tx = db
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(db_error)?;
-    let who = actor(&tx, &headers)?;
-    if !permitted(&tx, &who, &p.room)? {
-        return Err(err(StatusCode::FORBIDDEN, "room access denied"));
-    }
+/// Corridors are shared space authorized and chatted in as the lobby.
+const CORRIDOR_ROOM: &str = "lobby";
+
+/// The validated office map shared by realtime presence validation.
+fn office_map() -> &'static monastack_core::map::Map {
     static WORLD: std::sync::OnceLock<monastack_core::map::Map> = std::sync::OnceLock::new();
-    let world = WORLD.get_or_init(|| {
+    WORLD.get_or_init(|| {
         let world: monastack_core::map::Map =
-            serde_json::from_str(include_str!("../../../data/seed/nviai/map.v1.json"))
+            serde_json::from_str(include_str!("../../../data/seed/nviai/map.v2.json"))
                 .expect("invalid map");
         world.validate().expect("invalid map geometry");
         world
-    });
-    if p.x.fract() != 0.0 || p.y.fract() != 0.0 {
-        return Err(err(StatusCode::BAD_REQUEST, "position must be a grid cell"));
-    }
-    let point = [p.x as i32, p.y as i32];
-    let mut allowed = std::collections::HashSet::new();
-    for room in &world.rooms {
-        if permitted(&tx, &who, &room.id)? {
-            allowed.insert(room.id.clone());
-        }
-    }
-    let actual_room = world
-        .rooms
-        .iter()
-        .find(|r| r.contains(point))
-        .map(|r| r.id.as_str())
-        .unwrap_or("lobby");
-    if !world.walkable(point, &allowed) || actual_room != p.room {
-        return Err(err(
-            StatusCode::FORBIDDEN,
-            "invalid or unauthorized position",
-        ));
-    }
-    tx.execute("DELETE FROM presence WHERE updated < ?1", [now() - 30])
-        .map_err(db_error)?;
-    let old: Option<(String, i64)> = tx
-        .query_row(
-            "SELECT actor,seq FROM presence WHERE session=?1",
-            [&p.session],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()
-        .map_err(db_error)?;
-    if let Some((owner, seq)) = old {
-        if owner != who || p.seq <= seq {
-            return Err(err(StatusCode::CONFLICT, "stale sequence or session"));
-        }
-    }
-    tx.execute("INSERT INTO presence VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(session) DO UPDATE SET room=excluded.room,x=excluded.x,y=excluded.y,seq=excluded.seq,updated=excluded.updated",params![p.session,who,p.room,p.x,p.y,p.seq,now()]).map_err(db_error)?;
-    tx.commit().map_err(db_error)?;
-    Ok(StatusCode::NO_CONTENT)
+    })
 }
-async fn leave_presence(
-    State(state): State<Db>,
-    Path(session): Path<String>,
-    headers: HeaderMap,
-) -> Result<StatusCode, ApiError> {
-    let mut db = state.lock().unwrap();
-    let tx = db
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(db_error)?;
-    let who = actor(&tx, &headers)?;
+
+/// Advances the access epoch observed by the realtime service. Called in the
+/// same transaction as any room-membership or credential change.
+fn bump_realtime_epoch(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute(
-        "DELETE FROM presence WHERE session=?1 AND actor=?2",
-        params![session, who],
-    )
-    .map_err(db_error)?;
-    tx.commit().map_err(db_error)?;
-    Ok(StatusCode::NO_CONTENT)
+        "INSERT INTO metadata(key,value) VALUES ('realtime_epoch','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)",
+        [],
+    )?;
+    Ok(())
 }
-async fn presence(
+fn realtime_epoch(db: &Connection) -> rusqlite::Result<u64> {
+    let value: Option<String> = db
+        .query_row(
+            "SELECT value FROM metadata WHERE key='realtime_epoch'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(value.and_then(|v| v.parse().ok()).unwrap_or(0))
+}
+
+/// Realtime epoch read directly from the authority database when the
+/// realtime capability runs in the same process.
+struct DbEpoch(Db);
+impl realtime::EpochSource for DbEpoch {
+    fn current(&self) -> Option<u64> {
+        let db = self.0.lock().ok()?;
+        realtime_epoch(&db).ok()
+    }
+}
+
+#[derive(Clone)]
+struct RealtimeConfig {
+    key: realtime::TicketKey,
+    /// Loopback URL clients use for presence.
+    url: String,
+}
+
+#[derive(Serialize)]
+struct TicketResponse {
+    ticket: String,
+    expires_in: i64,
+    realtime_url: String,
+}
+
+/// Issues a short-lived realtime ticket listing the rooms the caller may
+/// currently enter. The realtime service never sees the bearer credential.
+async fn realtime_ticket(
     State(state): State<Db>,
+    axum::Extension(config): axum::Extension<Option<RealtimeConfig>>,
     headers: HeaderMap,
-) -> Result<Json<Vec<Presence>>, ApiError> {
+) -> Result<Json<TicketResponse>, ApiError> {
+    let config = config.ok_or(err(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "realtime capability not configured",
+    ))?;
     let mut db = state.lock().unwrap();
     let tx = db.transaction().map_err(db_error)?;
     let who = actor(&tx, &headers)?;
-    let mut stmt = tx
-        .prepare("SELECT session,actor,room,x,y,seq FROM presence WHERE updated >= ?1")
-        .map_err(db_error)?;
-    let rows = stmt
-        .query_map([now() - 30], |r| {
-            Ok(Presence {
-                session: r.get(0)?,
-                actor: r.get(1)?,
-                room: r.get(2)?,
-                x: r.get(3)?,
-                y: r.get(4)?,
-                seq: r.get(5)?,
-            })
-        })
-        .map_err(db_error)?;
-    let mut result = Vec::new();
-    for row in rows {
-        let p = row.map_err(db_error)?;
-        if permitted(&tx, &who, &p.room)? && permitted(&tx, &p.actor, &p.room)? {
-            result.push(p);
+    let mut rooms = Vec::new();
+    let ids: Vec<String> = {
+        let mut stmt = tx
+            .prepare("SELECT id FROM rooms ORDER BY id")
+            .map_err(db_error)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
+        rows.collect::<Result<_, _>>().map_err(db_error)?
+    };
+    for id in ids {
+        if permitted(&tx, &who, &id)? {
+            rooms.push(id);
         }
     }
-    drop(stmt);
+    let epoch = realtime_epoch(&tx).map_err(db_error)?;
     tx.commit().map_err(db_error)?;
-    Ok(Json(result))
+    let issued = now();
+    let ticket = realtime::Ticket {
+        v: realtime::TICKET_VERSION,
+        actor: who,
+        rooms,
+        epoch,
+        iat: issued,
+        exp: issued + realtime::TICKET_SECONDS,
+    };
+    Ok(Json(TicketResponse {
+        ticket: realtime::sign(&config.key, &ticket),
+        expires_in: realtime::TICKET_SECONDS,
+        realtime_url: config.url,
+    }))
+}
+
+async fn realtime_epoch_handler(
+    State(state): State<Db>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let db = state.lock().unwrap();
+    let epoch = realtime_epoch(&db).map_err(db_error)?;
+    Ok(Json(serde_json::json!({ "epoch": epoch })))
+}
+
+fn loopback_port(name: &str, default: u16) -> Result<u16, Box<dyn std::error::Error>> {
+    Ok(env::var(name)
+        .unwrap_or_else(|_| default.to_string())
+        .parse()?)
+}
+
+/// Standalone realtime service: no database, epoch polled from the authority.
+async fn serve_realtime() -> Result<(), Box<dyn std::error::Error>> {
+    let key = realtime::TicketKey::from_env()?
+        .ok_or("MONASTACK_REALTIME_KEY_FILE is required for the realtime service")?;
+    let authority = std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        loopback_port("MONASTACK_NODE_PORT", 47830)?,
+    ));
+    let port = loopback_port("MONASTACK_REALTIME_PORT", 47831)?;
+    if port == 0 {
+        return Err("MONASTACK_REALTIME_PORT must be nonzero".into());
+    }
+    let epoch = realtime::PolledEpoch::new();
+    tokio::spawn(realtime::poll_epoch(authority, epoch.clone()));
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+    eprintln!("realtime service listening on loopback:{port}");
+    axum::serve(
+        listener,
+        realtime::router(realtime::Realtime::new(key, epoch)),
+    )
+    .await?;
+    Ok(())
 }
 /// Copy a SQLite snapshot into a new destination without replacing existing files.
 fn copy_database(
@@ -556,6 +559,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = env::var("MONASTACK_DB").unwrap_or_else(|_| "office.sqlite3".into());
     match args.get(1).map(String::as_str) {
         None if args.len()==1 => {},
+        Some("realtime") if args.len()==2 => return serve_realtime().await,
         Some("enroll") if args.len()==3 => {},
         Some("host-enroll") if args.len()==5 => {
             if !std::path::Path::new(&path).is_file() { return Err("database does not exist; refusing host enrollment".into()); }
@@ -576,7 +580,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !std::path::Path::new(&path).is_file() { return Err("database does not exist; refusing to create it for revocation".into()); }
         },
         Some("backup" | "restore") if args.len()==3 => {},
-        _ => return Err("usage: office-node [enroll ACTOR | revoke | role grant|revoke hr|operations ACTOR | room grant|revoke ROOM ACTOR | host-enroll HOST HUMAN AGENT | host-revoke HOST | host-claims enable|disable | backup NEW_DESTINATION | restore SNAPSHOT]".into()),
+        _ => return Err("usage: office-node [realtime | enroll ACTOR | revoke | role grant|revoke hr|operations ACTOR | room grant|revoke ROOM ACTOR | host-enroll HOST HUMAN AGENT | host-revoke HOST | host-claims enable|disable | backup NEW_DESTINATION | restore SNAPSHOT]".into()),
     }
     if args.get(1).map(String::as_str) == Some("backup") {
         let destination = args
@@ -805,7 +809,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .optional()?;
         let principal = principal.ok_or("credential not found")?;
         tx.execute("DELETE FROM tokens WHERE hash=?1", [hash(token)])?;
-        tx.execute("DELETE FROM presence WHERE actor=?1", [&principal])?;
+        bump_realtime_epoch(&tx)?;
         tx.execute("INSERT INTO security_audit(actor,subject,action,created) VALUES ('local-operator',?1,'credential_revoked',?2)",params![principal,now()])?;
         tx.commit()?;
         return Ok(());
@@ -994,18 +998,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/v1/messages/{scope}",
             get(read_messages).post(send_message),
         )
-        .route("/v1/presence", get(presence).post(update_presence))
-        .route(
-            "/v1/presence/{session}",
-            axum::routing::delete(leave_presence),
-        )
-        .with_state(state);
+        .route("/v1/realtime/ticket", axum::routing::post(realtime_ticket))
+        .route("/v1/realtime/epoch", get(realtime_epoch_handler))
+        .with_state(state.clone());
     let port: u16 = env::var("MONASTACK_NODE_PORT")
         .unwrap_or_else(|_| "47830".into())
         .parse()?;
     if port == 0 {
         return Err("MONASTACK_NODE_PORT must be nonzero".into());
     }
+    // Realtime presence runs in this process by default on its own loopback
+    // port (MONASTACK_REALTIME_PORT, ephemeral when unset), with a fresh key
+    // and the epoch read from this database. `external` advertises a
+    // separately started `office-node realtime` service instead.
+    let config = match env::var("MONASTACK_REALTIME").as_deref() {
+        Ok("off") => None,
+        Ok("external") => Some(RealtimeConfig {
+            key: realtime::TicketKey::from_env()?
+                .ok_or("MONASTACK_REALTIME_KEY_FILE is required for external realtime")?,
+            url: format!(
+                "http://127.0.0.1:{}",
+                loopback_port("MONASTACK_REALTIME_PORT", 47831)?
+            ),
+        }),
+        Ok("embedded") | Err(_) => {
+            let key = realtime::TicketKey::from_env()?.unwrap_or_else(realtime::TicketKey::random);
+            let listener = tokio::net::TcpListener::bind((
+                std::net::Ipv4Addr::LOCALHOST,
+                loopback_port("MONASTACK_REALTIME_PORT", 0)?,
+            ))
+            .await?;
+            let realtime_port = listener.local_addr()?.port();
+            let mut service =
+                realtime::Realtime::new(key.clone(), Arc::new(DbEpoch(state.clone())));
+            if let Some(config) = media::MediaConfig::from_env()? {
+                service = service.with_media(media::MediaControl::new(config));
+            }
+            tokio::spawn(async move {
+                if let Err(error) = axum::serve(listener, realtime::router(service)).await {
+                    eprintln!("realtime service stopped: {error}");
+                }
+            });
+            eprintln!("realtime presence listening on loopback:{realtime_port}");
+            Some(RealtimeConfig {
+                key,
+                url: format!("http://127.0.0.1:{realtime_port}"),
+            })
+        }
+        Ok(_) => return Err("MONASTACK_REALTIME must be embedded, external or off".into()),
+    };
+    let app = app.layer(axum::Extension(config));
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
     eprintln!("office node listening on loopback:{port}");
     axum::serve(listener, app).await?;
@@ -1436,79 +1478,131 @@ mod tests {
             StatusCode::FORBIDDEN
         );
     }
+    async fn ticket_headers(db: &Db, config: &RealtimeConfig, who: &str) -> HeaderMap {
+        let ticket = realtime_ticket(
+            State(db.clone()),
+            axum::Extension(Some(config.clone())),
+            headers(who),
+        )
+        .await
+        .unwrap()
+        .0
+        .ticket;
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Ticket {ticket}").parse().unwrap());
+        h
+    }
     #[tokio::test]
-    async fn presence_rejects_stale_and_hides_private_room() {
+    async fn realtime_presence_uses_tickets_and_revokes_by_epoch() {
+        use realtime::{presence, update_presence, UpdatePresence};
         let db = setup();
+        let config = RealtimeConfig {
+            key: realtime::TicketKey::random(),
+            url: "http://127.0.0.1:1".into(),
+        };
+        let rt = realtime::Realtime::new(config.key.clone(), Arc::new(DbEpoch(db.clone())));
+        let an = ticket_headers(&db, &config, "an").await;
+        let van = ticket_headers(&db, &config, "van").await;
         let update = |seq| {
             Json(UpdatePresence {
                 session: "0123456789abcdef".into(),
                 room: "finance".into(),
-                x: 2.,
-                y: 14.,
+                x: 25.,
+                y: 23.,
                 seq,
             })
         };
-        let spoof = Json(UpdatePresence {
-            session: "abcdef0123456789".into(),
-            room: "lobby".into(),
-            x: 2.,
-            y: 14.,
-            seq: 1,
-        });
-        assert_eq!(
-            update_presence(State(db.clone()), headers("an"), spoof)
-                .await
-                .unwrap_err()
-                .0,
-            StatusCode::FORBIDDEN
-        );
-        let wall = Json(UpdatePresence {
-            session: "abcdef0123456789".into(),
-            room: "lobby".into(),
-            x: 0.,
-            y: 0.,
-            seq: 1,
-        });
-        assert_eq!(
-            update_presence(State(db.clone()), headers("an"), wall)
-                .await
-                .unwrap_err()
-                .0,
-            StatusCode::FORBIDDEN
-        );
+        let at = |room: &str, x, y| {
+            Json(UpdatePresence {
+                session: "abcdef0123456789".into(),
+                room: room.into(),
+                x,
+                y,
+                seq: 1,
+            })
+        };
+        // A finance cell reported as the lobby, a wall, and a private room
+        // without membership are all refused.
+        for (headers, body) in [
+            (an.clone(), at("lobby", 25., 23.)),
+            (an.clone(), at("lobby", 0., 0.)),
+            (an.clone(), at("finance", 25., 23.)),
+        ] {
+            assert_eq!(
+                update_presence(State(rt.clone()), headers, body)
+                    .await
+                    .unwrap_err()
+                    .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+        // Corridors are reported as the lobby.
         assert!(
-            update_presence(State(db.clone()), headers("van"), update(1))
+            update_presence(State(rt.clone()), an.clone(), at("lobby", 9., 9.))
                 .await
                 .is_ok()
         );
+        assert!(update_presence(State(rt.clone()), van.clone(), update(1))
+            .await
+            .is_ok());
         assert_eq!(
-            update_presence(State(db.clone()), headers("van"), update(1))
+            update_presence(State(rt.clone()), van.clone(), update(1))
                 .await
                 .unwrap_err()
                 .0,
             StatusCode::CONFLICT
         );
-        assert!(presence(State(db.clone()), headers("an"))
+        let seen =
+            |list: Vec<realtime::Presence>| list.into_iter().map(|p| p.actor).collect::<Vec<_>>();
+        assert_eq!(
+            seen(presence(State(rt.clone()), an.clone()).await.unwrap().0),
+            ["an"]
+        );
+        let mut visible = seen(presence(State(rt.clone()), van.clone()).await.unwrap().0);
+        visible.sort();
+        assert_eq!(visible, ["an", "van"]);
+        // A bearer token or a forged ticket is not a realtime credential.
+        let mut forged = HeaderMap::new();
+        forged.insert("authorization", "Ticket 00.00".parse().unwrap());
+        for headers in [headers("van"), forged] {
+            assert_eq!(
+                presence(State(rt.clone()), headers).await.unwrap_err().0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        // Revoking membership advances the epoch: the old ticket and the
+        // presence written under it stop working before the ticket expires.
+        {
+            let mut conn = db.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            tx.execute(
+                "DELETE FROM room_members WHERE room='finance' AND actor='van'",
+                [],
+            )
+            .unwrap();
+            let version = room_admin::membership_version(&tx, "finance").unwrap();
+            room_admin::advance_version(&tx, "finance", version).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            presence(State(rt.clone()), van.clone())
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::UNAUTHORIZED
+        );
+        let van = ticket_headers(&db, &config, "van").await;
+        assert!(presence(State(rt.clone()), van.clone())
             .await
             .unwrap()
             .0
             .is_empty());
         assert_eq!(
-            presence(State(db.clone()), headers("van"))
+            update_presence(State(rt.clone()), van.clone(), update(2))
                 .await
-                .unwrap()
-                .0
-                .len(),
-            1
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
         );
-        db.lock()
-            .unwrap()
-            .execute("UPDATE presence SET updated=?1", [now() - 31])
-            .unwrap();
-        assert!(presence(State(db.clone()), headers("van"))
-            .await
-            .unwrap()
-            .0
-            .is_empty());
     }
 }

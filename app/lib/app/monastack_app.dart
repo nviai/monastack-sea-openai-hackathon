@@ -46,12 +46,17 @@ class _OfficeState extends ConsumerState<Office> {
   String room = 'lobby';
   String? notice;
   final worldKey = GlobalKey<OfficeWorldState>();
-  final position = ValueNotifier<List<int>>([2, 2]);
+
+  /// Unknown until the office map loads and reports the spawn cell; presence
+  /// is not published for an unknown position.
+  final position = ValueNotifier<List<int>>(const [-1, -1]);
   final remote = ValueNotifier<List<Map<String, dynamic>>>([]);
+  final speaking = ValueNotifier<Set<String>>(const {});
   @override
   void dispose() {
     position.dispose();
     remote.dispose();
+    speaking.dispose();
     super.dispose();
   }
 
@@ -104,6 +109,26 @@ class _OfficeState extends ConsumerState<Office> {
       rethrow;
     }
   }
+
+  /// Rooms the viewer may enter: the node's snapshot while connected,
+  /// otherwise the seed preview policy. `null` while the core is loading.
+  Set<String>? accessibleRooms(List<Map<String, dynamic>> rooms) {
+    if (connectedActor != null) return {...?serverRooms};
+    final core = ref.watch(officeCoreProvider).value;
+    if (core == null) return null;
+    return {
+      for (final r in rooms)
+        if (core.mayEnter(actor: actor, room: r['id'] as String))
+          r['id'] as String,
+    };
+  }
+
+  String? locateRoom(List<int> cell) => ref
+      .read(officeCoreProvider)
+      .value
+      ?.roomAt(
+        cell: Cell(x: cell[0], y: cell[1]),
+      );
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -206,6 +231,27 @@ class _OfficeState extends ConsumerState<Office> {
                                           color: Colors.white,
                                           fontSize: 13,
                                         ),
+                                      ),
+                                      trailing: ValueListenableBuilder(
+                                        valueListenable: remote,
+                                        builder: (context, presence, _) {
+                                          final count = presence
+                                              .where(
+                                                (p) => p['room'] == r['id'],
+                                              )
+                                              .length;
+                                          return count == 0
+                                              ? const SizedBox.shrink()
+                                              : Text(
+                                                  '$count',
+                                                  semanticsLabel:
+                                                      '$count visible',
+                                                  style: const TextStyle(
+                                                    color: Color(0xffc9d9ce),
+                                                    fontSize: 12,
+                                                  ),
+                                                );
+                                        },
                                       ),
                                       onTap: () => enter(data, r),
                                     ),
@@ -314,6 +360,17 @@ class _OfficeState extends ConsumerState<Office> {
                                 actor: actor,
                                 findPath: (start, goal) =>
                                     findPath(start, goal),
+                                locateRoom: locateRoom,
+                                speaking: speaking,
+                                accessibleRooms: accessibleRooms(rooms),
+                                onSelectActor: (id) {
+                                  final profile = actors
+                                      .where((a) => a['id'] == id)
+                                      .firstOrNull;
+                                  if (profile != null) {
+                                    showActorProfile(context, profile);
+                                  }
+                                },
                                 onPosition: (p, nextRoom) {
                                   position.value = p;
                                   if (nextRoom != room && mounted) {
@@ -374,6 +431,7 @@ class _OfficeState extends ConsumerState<Office> {
                           remote: remote,
                           actors: actors,
                           rooms: rooms,
+                          speaking: speaking,
                           onPermissions: (rooms) {
                             if (serverRooms != null &&
                                 serverRooms!.length == rooms.length &&

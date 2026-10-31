@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-leave-calendar-') as director
         assert post('an', f'leave/{leave_id}/decision', {'action': 'approve',
             'expected_version': 1, 'op': secrets.token_hex(16)}) == 200
         subprocess.run(['flutter', 'test', 'integration_test/leave_calendar_test.dart', '-d', 'macos'],
-                       cwd=root / 'app', env=env, check=True, timeout=90)
+                       cwd=root / 'app', env=env, check=True, timeout=240)
         # Only the disposable fixture is populated directly for the size boundary.
         with sqlite3.connect(env['MONASTACK_DB']) as connection:
             connection.executemany(

@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-payment-app-') as directory:
         payment=secrets.token_hex(16)
         assert post('van','payment-authorizations',{'id':payment,'expense':expense,'op':secrets.token_hex(16)})==201
         assert post('an',f'payment-authorizations/{payment}/decision',{'action':'approve','expected_version':1,'op':secrets.token_hex(16)})==200
-        subprocess.run(['flutter','test','integration_test/payment_revocation_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=90)
+        subprocess.run(['flutter','test','integration_test/payment_revocation_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=240)
         with sqlite3.connect(env['MONASTACK_DB']) as conn:
             assert conn.execute('SELECT state,version FROM payment_authorizations WHERE id=?',(payment,)).fetchone()==('revoked',3)
 

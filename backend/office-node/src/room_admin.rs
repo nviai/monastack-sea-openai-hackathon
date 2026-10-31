@@ -21,7 +21,7 @@ pub fn membership_version(db: &Connection, room: &str) -> rusqlite::Result<i64> 
 }
 pub fn advance_version(tx: &Transaction<'_>, room: &str, current: i64) -> rusqlite::Result<()> {
     tx.execute("INSERT INTO room_membership_versions(room,version) VALUES (?1,?2) ON CONFLICT(room) DO UPDATE SET version=excluded.version", params![room,current + 1])?;
-    Ok(())
+    crate::bump_realtime_epoch(tx)
 }
 
 fn is_admin(db: &Connection, who: &str) -> Result<bool, ApiError> {

@@ -12,6 +12,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from realtime_client import Realtime
 
 root=Path(__file__).resolve().parents[3]
 node=root/'backend/office-node/target/debug/monastack-office-node'
@@ -209,9 +210,11 @@ with tempfile.TemporaryDirectory(prefix='monastack-finance-race-') as directory:
             results=list(pool.map(lambda i:request(i,'van','POST','messages/room%3Alobby',chat)[0],range(2)))
         assert sorted(results)==[200,201],results
         session=op()
-        presence={'session':session,'room':'lobby','x':2,'y':2,'seq':1}
+        # Presence is ephemeral realtime state, not shared through the database:
+        # duplicate heartbeats race on one realtime service instead.
+        rt=Realtime(ports[0],tokens['van'])
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            results=list(pool.map(lambda i:request(i,'van','POST','presence',presence)[0],range(2)))
+            results=list(pool.map(lambda _:rt.publish(session,'lobby',14,13,1),range(2)))
         assert sorted(results)==[204,409],results
         private_message=op()
         with sqlite3.connect(db,timeout=2) as conn:

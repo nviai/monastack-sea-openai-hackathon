@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from realtime_client import Realtime
 
 root = Path(__file__).resolve().parents[3]
 node = root / 'backend/office-node/target/debug/monastack-office-node'
@@ -43,11 +44,12 @@ with tempfile.TemporaryDirectory(prefix='monastack-room-membership-') as directo
             try:
                 granted = False
                 while not stop.wait(.1):
-                    with sqlite3.connect(env['MONASTACK_DB'], timeout=2) as connection:
-                        if not granted:
+                    if not granted:
+                        with sqlite3.connect(env['MONASTACK_DB'], timeout=2) as connection:
                             found = connection.execute("SELECT 1 FROM messages WHERE body='synthetic grant requested'").fetchone()
-                        else:
-                            found = connection.execute("SELECT 1 FROM presence WHERE actor='an' AND room='finance' AND x=2 AND y=14").fetchone()
+                    else:
+                        found = any(p['actor'] == 'an' and p['room'] == 'finance' and (p['x'], p['y']) == (25, 23)
+                                    for p in Realtime(port, env['MONASTACK_TEST_TOKEN']).presence())
                     if found:
                         action = 'revoke' if granted else 'grant'
                         subprocess.run([str(node), 'room', action, 'finance', 'an'], env=env, check=True)

@@ -1,10 +1,30 @@
-# Stage 1 prototype status
+# Stage 1 status
 
-Stage 1 is incomplete. This is a loopback development prototype with a Flutter/Flame grid office and a Rust office node. It is not suitable for confidential data or remote deployment. The node combines chat storage and presence for convenience; it is not the specified separated sync, presence and media topology. The profile selector before connection is a local preview, not sign-in. After connection the server authenticates each request and enforces room membership for chat and presence. The local Rust bridge check is not a security boundary. While connected, the app uses the node’s current room permission snapshot and polls for changes; while disconnected, it uses the seed as a local preview. The server independently authorizes restricted chat and presence requests. The client cancels movement and returns to the lobby when access is removed; this was exercised for a seeded membership in a macOS app-to-node integration test. A node snapshot can also reflect a membership granted after seeding; an isolated macOS app-to-node test granted a synthetic user access, navigated into the room, revoked access and observed a return to the lobby. The local bridge remains a UI aid, not a security boundary. Agents are offline profiles; no agent runtime exists.
+Stage 1 is **implemented and verified on one Mac with automated tests**, but it is not signed off. Three checks need hardware or a person and have not been done: real-microphone voice between two people, two physical Macs, and running the x86_64 slice of the universal release build (this Mac has no Rosetta). The manual procedure is at the end of this document. This is a loopback development topology, not a production service. Do not put confidential data in it or expose it to a network.
+
+See [the acceptance tracker](stage-1-acceptance.md) for item-by-item evidence, and the ADRs in [`adr/`](adr/) for design decisions:
+- [0001](adr/0001-local-authority.md): authority and records
+- [0002](adr/0002-app-feature-layout.md): app layout
+- [0003](adr/0003-flutter-rust-bridge.md): Flutter/Rust bridge
+- [0004](adr/0004-isometric-office-v2.md): office and map v2
+- [0005](adr/0005-realtime-topology.md): authority/realtime split
+- [0006](adr/0006-voice-control-plane.md): voice
+
+## Topology
+
+| Component | Required for | Runs as |
+| --- | --- | --- |
+| macOS app (Flutter/Flame UI + Rust core via `flutter_rust_bridge`) | everything | `flutter run -d macos` |
+| Authority / sync node: identity, membership, chat and records, backup | collaboration | `backend/office-node/target/debug/monastack-office-node` on 127.0.0.1:47830 |
+| Realtime: presence and voice control plane | presence, voice | embedded in the node by default, or `monastack-office-node realtime` |
+| Media server: self-hosted LiveKit 1.13.10 in Docker | voice | `backend/media/livekit-dev.sh start` |
+| Process node / agent host | nothing in Stage 1 | optional, see `stages-3-6-status.md` |
+
+Without a node, the app is a **local preview**: the map, room list, people and seed policy work, but there is no presence, chat or voice. Without LiveKit, presence and chat work and the voice panel says voice is unavailable and points to room chat. Without the realtime service, chat works and the panel says presence is unavailable. Remote collaboration needs these services reachable over a secured network, which this topology does not provide.
 
 ## Run on macOS
 
-Prerequisites used: Flutter 3.47.7 / Dart 3.13.5, Xcode 27.1, Rust 1.95.0 on Apple Silicon. From the repository root:
+Tested on Apple M6 / 32 GiB, macOS 27.0.1, Flutter 3.47.7 / Dart 3.13.5, Xcode 27.1, Rust 1.95.0, Docker Desktop. From the repository root:
 
 ```sh
 cargo build --manifest-path core/Cargo.toml
@@ -13,33 +33,91 @@ umask 077
 export MONASTACK_DB="$PWD/office.sqlite3"
 openssl rand -hex 32 > local-an-token.txt
 backend/office-node/target/debug/monastack-office-node enroll an < local-an-token.txt
+
+# Optional voice: starts LiveKit on 127.0.0.1:7880-7882 with random local credentials.
+backend/media/livekit-dev.sh start
+export MONASTACK_MEDIA_URL=ws://127.0.0.1:7880 MONASTACK_MEDIA_KEY_FILE="$PWD/.monastack-dev/media.key"
+
+export MONASTACK_REALTIME_PORT=47831   # embedded realtime; ephemeral if unset
 backend/office-node/target/debug/monastack-office-node
 ```
 
-In a second terminal, run:
+In a second terminal: `cd app && flutter run -d macos`. Paste the token from `local-an-token.txt` and connect. Enroll other seeded people with their own random tokens to try a second identity.
+
+To run realtime as a separate process, create a shared key with `openssl rand -hex 32 > .monastack-dev/realtime.key` and set `MONASTACK_REALTIME_KEY_FILE` to it in both terminals. Then start the node with `MONASTACK_REALTIME=external` and the realtime service with `monastack-office-node realtime`. The media variables go on the realtime service.
+
+**Secrets.** Bearer tokens, `.monastack-dev/` (realtime and LiveKit keys) and the database are private local files. They are git-ignored and created with mode 0600 or 0700. The node stores only SHA-256 hashes of bearer tokens. Tokens are passed on stdin, never as arguments. A local operator revokes a credential with `monastack-office-node revoke < token-file`. Room membership is changed with `room grant|revoke ROOM ACTOR`, or in the app by an organization admin. Every such change is audited and advances the realtime epoch, so presence and voice access end immediately. There is no expiry, rate limiting or credential UI, and nothing here is a production credential.
+
+## Office
+
+- **Map v2.** The office is 30×27 cells. A central lobby (NVIAI sign, products screen, Mona's reception) connects through two-cell corridors and wide doorways to Dev & QA, Product/PM, Meeting, Sales, Customer Support, HR, Lounge and Finance.
+- **Validation.** Rooms, zones, doors, props (floor and wall-mounted), collision, spawns and desk assignments are validated in Rust, including reachability of every anchor. HR is restricted, with one unassigned desk and no invented person.
+- **Rendering.** The 2.5D view is original programmatic art: patterned floors, full-height far walls and cut-away near walls, door lintels, furniture, wall decor, signage and shadows. Static art is cached once. Avatars are depth-sorted and occluded by walls and furniture, with constant-size name labels and room signs.
+- **Agents.** Seeded agents sit at their desks as translucent grey "offline agent" figures. No agent runtime exists.
+- **Input and camera.** Click to walk with Rust pathfinding, WASD/arrows, drag to pan, pinch or scroll to zoom, center on me, reset view, and camera follow. Hovering shows desk assignments. Clicking an avatar opens its profile. Rooms you cannot enter are dimmed and show a lock. Reduced motion (system or toggle) removes stepped walking and interpolation.
+- **Accessibility.** The room list and the people list are keyboard-reachable alternatives to the canvas. Large-text layouts and VoiceOver on the canvas have not been audited.
+- **Screenshots.** `flutter test integration_test/office_capture_test.dart -d macos` writes overview and close-up captures to the app container. They show seeded names, so keep them private (`docs/private/` is git-ignored).
+
+## Presence, chat and voice
+
+- **Presence** is ephemeral and held by the realtime service. The app publishes its position within about 120 ms of moving, sends a 5 s heartbeat, and reads presence every second. Remote one-cell moves are interpolated. A session expires 20 s after its last heartbeat. A second macOS app killed with SIGKILL disappeared from the first app's view within the expiry window and did not come back (`app_crash_app.py`).
+- **Chat.** Room chat and DMs are authorized and stored by the authority, with idempotent IDs, a durable local send queue, reconnect, scoped history and revocation. This is unchanged from the earlier prototype and described in the tests below.
+- **Voice** is opt-in per session. The microphone starts muted on every join, and voice follows the room you are in. Speakers get a ring in the office view. Access is enforced by the media control plane, not by the UI (ADR 0006). If voice fails, the panel points to room chat.
+
+## Trust model and limits
+
+- **Server-readable prototype.** The node and anyone with filesystem access can read the SQLite database. LiveKit can read audio. Traffic is plaintext HTTP/WebSocket on loopback. There is no end-to-end encryption, no offline permission lease, and no managed or encrypted backup.
+- **No forgetting.** A device cannot be made to forget data it already received.
+- **Revocation.** It reaches presence immediately in the embedded mode and in about 1 s in separate mode. For voice it ends the connection within about 0.4 s. Any access change briefly reconnects all voice rooms and hides presence until each client republishes.
+- **Spatial rejoin.** A member who walks out of a room can still rejoin that room's voice with an unexpired token, for up to 120 s.
+- **Not production.** Identity is a locally provisioned bearer token, with no device lifecycle. Remote administration, TLS and a security review are not done.
+
+## Measurement
+
+On the tested Mac, `flutter test integration_test/office_measurement_test.dart -d macos` ran a debug build in fully live frame mode for 5 s. Results:
+
+| Scenario | Frames / 5 s | FPS | p95 build | p95 raster | RSS |
+| --- | --- | --- | --- | --- | --- |
+| Idle overview | 301 | 60.2 | 0.84 ms | 1.58 ms | 404 MB |
+| Walking lobby → Dev & QA, zoomed, camera following | 300 | 59.8 | 1.27 ms | 1.42 ms | 406 MB |
+
+ This was one run under the test harness, which could not bring the window to the foreground. It does not establish profile-mode performance or performance with many clients.
+
+## Tests
+
+From the repository root:
 
 ```sh
-cd app
-flutter run -d macos
+cargo test --manifest-path core/Cargo.toml
+cargo test --manifest-path backend/office-node/Cargo.toml
+python3 backend/office-node/tests/http_smoke.py
+python3 backend/office-node/tests/multi_node_finance.py
+python3 backend/office-node/tests/realtime_separate.py
+python3 tools/test_bundle_assets.py
+(cd app && MONASTACK_CORE="$(cd ../core && pwd)/target/debug/libmonastack_core.dylib" flutter test && flutter analyze)
+(cd app && flutter test integration_test/office_test.dart -d macos)
+python3 backend/office-node/tests/app_integration.py        # app ↔ node, outbox, leave
+python3 backend/office-node/tests/room_membership_app.py    # grant, walk in, revoke, return to lobby
+python3 backend/office-node/tests/chat_history_app.py
+python3 backend/office-node/tests/presence_crash_app.py     # synthetic peer killed
+python3 backend/office-node/tests/chat_process_restart.py
+python3 backend/office-node/tests/two_app_integration.py    # two macOS apps, chat/DM, presence, node restart
+python3 backend/office-node/tests/app_crash_app.py          # second macOS app killed with SIGKILL
+tools/media-spike/.venv/bin/python backend/office-node/tests/voice_control.py  # LiveKit, adversarial
+tools/media-spike/.venv/bin/python backend/office-node/tests/voice_app.py      # macOS app voice
 ```
 
-Paste the token from `local-an-token.txt` into the local-node connection field. Enroll another seeded human with a separately generated random token to test a second identity. The token file and database are private: store them securely, do not commit or share them, and remove them when no longer needed. The node stores only the SHA-256 hash of each token. High-entropy random tokens are required; there is no password hashing, expiration, rate limit or graphical credential-management UI. A local operator can revoke a token by running `backend/office-node/target/debug/monastack-office-node revoke < local-an-token.txt` with the same `MONASTACK_DB`; the token is not passed as a command argument. Revocation deletes that actor’s current presence sessions and rejects the credential on subsequent requests. Other credentials for the same actor remain valid and must be revoked separately. Enrollment and revocation are recorded as actions by `local-operator`, not attributed to an authenticated person. The node listens on 127.0.0.1:47830 only; do not expose it or use a proxy to access it remotely. The Xcode build compiles and signs the Rust library into the app bundle for the host architecture. If it cannot be loaded, movement and local room selection fail closed. Release and universal builds have not been verified. The macOS window now has a minimum size; the layout is not verified under large text scaling or constrained displays.
+The macOS tests drive Flutter controls directly and force frames, because the runner cannot bring the windows to the foreground. They do not exercise physical mouse or keyboard input. The voice tests use Docker, generated silence and random credentials, and never open a microphone. Results from the latest run are in the acceptance tracker.
 
-Run `cargo test --manifest-path core/Cargo.toml`, `cargo test --manifest-path backend/office-node/Cargo.toml`, and `python3 backend/office-node/tests/http_smoke.py` after building the node. From `app`, run `MONASTACK_CORE="$(cd ../core && pwd)/target/debug/libmonastack_core.dylib" flutter test`, `flutter analyze`, `flutter build macos --debug`, and `flutter test integration_test/office_test.dart -d macos`. With the node built, `python3 backend/office-node/tests/app_integration.py` runs isolated app-to-node and outbox fixtures on a temporary loopback port. `MONASTACK_TEST_REVOCATION=1 python3 backend/office-node/tests/app_integration.py` also exercises live membership revocation. With the node built, `python3 backend/office-node/tests/room_membership_app.py` exercises a synthetic local grant and revocation through the app. `python3 backend/office-node/tests/chat_history_http.py` and `python3 backend/office-node/tests/chat_history_app.py` exercise scoped history pagination and revocation.
+## Manual verification still required
 
-## Implemented and tested
-
-The seed is applied transactionally once to a new database, and subsequent starts preserve edits and membership revocations. The node upgrades recognized schema versions 1–15 to version 16 transactionally and refuses unrelated or newer-schema databases without modifying them; comprehensive future migrations and compatibility testing are still needed. It includes 11 humans and six offline agent profiles; HR is empty and Finance includes the accountant. The app assets are copies of `data/seed/nviai/seed.v1.json` and `map.v1.json`. The macOS bundle script now rejects mismatched copies before building Rust, without overwriting either copy; review and reconcile intentional changes before building. `python3 tools/test_bundle_assets.py` verifies matching and divergent fixtures, including a symlinked core and paths containing spaces. No credentials are included in the seed. Seeded names and emails are private project data; do not publish or transmit them.
-
-The node provides versioned HTTP endpoints for room permissions, room messages, direct messages and presence. The profile list shows currently visible human presence from the same filtered snapshots as the office; an absent person is labeled not visible rather than presumed offline. Seeded agents remain marked offline. Authentication, room permissions and corresponding message or presence reads use a single SQLite snapshot. A response authorized before a revocation can still arrive afterward; a device cannot be made to forget data already received. It checks a token and room policy on each request, persists messages in SQLite, deduplicates retries with the same ID and content, and removes a session on explicit disconnect, and expires inactive presence after 30 seconds. The client polls every five seconds. After an authenticated connection, chat sends are first stored in a separate local durable queue keyed by actor and the node database identity; queued sends retry in order after connectivity returns. Rejected sends pause later queued messages until reviewed and discarded. If disconnect is requested while a message is being stored and that storage fails, the app stays connected and preserves the draft; an isolated macOS app-to-node test covers this race and verifies that a successfully queued message is delivered after reconnect. Chat follows new messages when the viewer is near the bottom, without forcing a viewer who has scrolled up back to the latest message. The two-client HTTP smoke test checks message persistence across restart, duplicate delivery, denial, revocation across restart, two visible sessions, SQLite backup contents, and movement coordinate visibility and denial of wall and private-room positions. Automated tests also cover DM isolation, seed reapplication, private presence filtering and stale sequence denial. One macOS integration test exercised the bundled Rust bridge, walked to an authorized room and denied a restricted room. A separate macOS app-to-node integration test authenticated, sent a room message read by a second HTTP identity, and published movement received by that identity. Those tests used one app instance. Separately, `python3 backend/office-node/tests/two_app_integration.py` built and ran two distinct macOS application processes against the same isolated loopback node. They exchanged room messages and direct messages, observed presence and movement, and verified explicit disconnect, reconnect and recovery after an isolated node restart, including a direct message queued during the outage, retained when the Flutter widget tree was torn down and recreated, and delivered exactly once after reconnection. That particular test recreates the widget tree within one process. Separately, `python3 backend/office-node/tests/chat_process_restart.py` queues a synthetic message while the node is unavailable, ends the first macOS app test process, starts a second process against the same isolated queue, and verifies that the message reaches the node exactly once. The fixture checks the two app process IDs differ. It does not simulate a power loss or an ungraceful app crash. The test invokes Flutter controls directly because the runner could not foreground the windows; it does not verify simultaneous mouse or keyboard input, two physical devices, private-room media or crash expiry of a second actual app. It uses disposable credentials and data. An isolated macOS app test (`python3 backend/office-node/tests/presence_crash_app.py`) also killed a separate synthetic Python heartbeat client and verified that its avatar disappeared after expiry while the app stayed connected. This does not establish crash handling for a second actual app. The two-app test passed again with the decorative map and filtered profiles after the harness requested frames explicitly. A prior rerun on that app did not complete the full scenario; the runner reported that it could not foreground the apps. The final readable-label adjustment was verified separately in a macOS capture. Earlier attempts also failed or timed out. The test invokes callbacks and forces frames, so it does not establish reliable physical input or a second-device crash recovery. The extended single-app revocation run passed after the test moved its HTTP calls outside the widget test’s fake async environment. Task writes and chat sends use separate limited durable client queues. The chat queue stores plaintext, including pending and retained delivered/discarded history, in the app container; it contains no credentials. At most 1,000 pending or rejected entries are allowed per actor/node identity. The node identity is a database identifier, not cryptographic server authentication. The queue becomes accessible after connecting as the same actor to the same node identity; it does not support composing before an initial authenticated connection or provide offline permission leases. The node rechecks current access before each send and retry. A rejected message blocks later queued messages until explicitly discarded. A lost response can mean an apparently pending or rejected message was already delivered; review the conversation before recreating it. Restoring an old database can restore permissions, and data already read or retained locally cannot be revoked remotely. The conversation history dialog retrieves earlier pages of up to 200 messages using an ID cursor scoped to the current room or DM; the node rechecks authorization on every page, and the dialog clears visible records when refresh fails. An isolated macOS app-to-node test paged a synthetic private conversation and verified clearing after membership revocation. There is no general incremental sync, device enrollment, general security audit or automated backup service. The main live chat still refreshes only the latest 200 messages, so a gap larger than that between polls requires opening history; history is online and is not a local offline cache.
-
-## Trust model and gaps
-
-Prototype choice: server-readable data. The local node and anyone with filesystem access can read the SQLite database and plaintext messages. HTTP and bearer credentials are unencrypted on loopback; there is no transport or application-level encryption and no E2EE key lifecycle. A device cannot be made to forget plaintext already received. There is no offline permission lease; offline clients cannot access a local message cache. Backups are not encrypted or automated. Restoring an older snapshot can restore credentials or memberships that were subsequently revoked, so reapply and verify access changes before using the restored node. A manual backup/restore command creates a new file without overwriting an existing destination; see below. Credentials are manually provisioned by a local operator; A trusted local operator can grant or revoke membership of a restricted room using `MONASTACK_DB=/path/to/office.sqlite3 backend/office-node/target/debug/monastack-office-node room grant finance an` or the corresponding `room revoke` command. These changes are transactional and audited as `local-operator`. An authenticated local org-admin can also manage restricted-room membership in the app; changes require confirmation, include a version check, and are audited. Admin status alone does not grant room-content access. This loopback-only prototype is not authenticated remote administration. Backups may restore old membership, so reapply later revocations after restore. The security checks are useful tests, not a production security review.
-
-Flame draws original programmatic shapes; no external artwork is used. The rendered prototype uses the versioned grid and Rust breadth-first pathfinder for room-list, click and WASD/arrow movement; walls and restricted rooms are blocked. The node validates the reported cell and room against its own map and membership data and returns filtered presence snapshots. Other sessions are drawn from those snapshots. Remote one-cell moves within the same room are visually interpolated over 250 ms; longer moves and room changes snap without inventing a path, and the system reduced-motion preference disables interpolation. Presence is still polling-based; the node validates destinations but does not enforce a speed limit or every intermediate movement step. The map supports drag-to-pan, pinch-to-zoom, accessible zoom buttons and reset; a widget test checks click targeting through zoom, pan and reset. Desks, plants, a meeting table and a lounge sofa are drawn with original programmatic shapes from map props; they remain non-colliding as specified in that data. The shared Rust map now validates room-to-zone references, prop IDs and bounded positive footprints, rejects overlapping solids or solids on walls, checks reachable anchors, and treats solid footprints as blocked in pathfinding and node presence validation. Zones are currently labels, not implemented acoustic boundaries. Synthetic tests exercise collision and detours; the seeded props are still non-colliding. The office offers a session-only reduced-motion toggle and honors the system setting: local paths finish without stepped animation, and remote interpolation is disabled. Other furniture, visual polish, persistent accessibility preferences and full occlusion remain incomplete. Voice, microphone permission, real media isolation, revocation in media and text fallback through a media failure are unverified or unimplemented. The self-hosted LiveKit token-revocation limitation and remaining design work are documented in `media-evaluation.md`. An integration test captured the updated app render to the local-only, git-ignored `docs/private/office-capture-readable-labels-20261030.png`; it includes private seed names and must not be published. On an Apple M6 Mac with 32 GiB RAM, macOS 27.0.1 and Flutter 3.47.7, one debug integration run with fully live frame scheduling collected 301 frame timing samples over 5.000 seconds (approximately 60 frames/s), with p95 build 0.958 ms, p95 raster 0.942 ms and current process RSS 440,664,064 bytes at capture. This is one idle, disconnected app run under the integration harness; the runner could not foreground the app. It does not establish profile-mode performance or 60 FPS under movement, multiple clients or load. Run `flutter test integration_test/office_measurement_test.dart -d macos` from `app` to make a new capture in a unique app-container temporary directory. The app calls the Rust core through a generated `flutter_rust_bridge` 2.13.0 binding; see `adr/0003-flutter-rust-bridge.md`.
-
-Before claiming Stage 1, complete the spatial office visuals and input, separate and harden the network capabilities, add authentication/device lifecycle and audit, durable sync/outbox and restore, real media, and extend two-app testing to crash expiry and physical input, along with media isolation, accessibility and performance. Do not infer completion from the prototype or HTTP smoke tests.
+1. **Two people, real microphones.** Start LiveKit and the node as above. Enroll `an` and `van`. Run one app normally. For the second app, copy `app/` and give the copy a different `PRODUCT_BUNDLE_IDENTIFIER` (as `two_app_integration.py` does), or use a second Mac with access to this Mac's loopback over an SSH tunnel.
+   - Both people join voice in the Lobby. Check that the microphone shows **Muted** and that the macOS permission prompt appears only on the first unmute.
+   - Speak, and check that the speaking ring and the "hearing" count update.
+   - Walk one person into Dev & QA and check that they stop hearing each other.
+   - Have `van` enter Finance, then run `room revoke finance van`. Check that `van` is disconnected and cannot rejoin Finance voice.
+2. **Two physical Macs.** The services listen on loopback only by design. Use an SSH port forward for 47830, the realtime port and 7880–7882, or wait for a secured remote topology.
+3. **Release build on Intel.** `flutter build macos --release` produced a signed universal app: the app binary and `libmonastack_core.dylib` are both x86_64 + arm64, built by `bundle_core.sh` in Release. The arm64 release app launched and ran without core-load errors. The x86_64 slice has not been run, because this Mac has no Rosetta. Notarization and distribution are out of scope.
 
 ## Manual local backup and restore
 

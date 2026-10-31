@@ -29,9 +29,27 @@ void main() {
       void finance() => tester
           .widget<ListTile>(find.widgetWithText(ListTile, 'Finance'))
           .onTap!();
-      void openAdmin() => tester
-          .widget<PopupMenuButton<String>>(find.byType(PopupMenuButton<String>))
-          .onSelected!('room-admin');
+      Future<void> openAdmin() async {
+        tester
+            .widget<TextButton>(
+              find.ancestor(
+                of: find.text('Workspace tools'),
+                matching: find.byWidgetPredicate((w) => w is TextButton),
+              ),
+            )
+            .onPressed!();
+        await tester.pump(const Duration(milliseconds: 300));
+        tester
+            .widget<OutlinedButton>(
+              find.ancestor(
+                of: find.text('Room membership'),
+                matching: find.byWidgetPredicate((w) => w is OutlinedButton),
+              ),
+            )
+            .onPressed!();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
       void choose(String value) => tester
           .widget<DropdownButton<String>>(
             find.descendant(
@@ -64,7 +82,7 @@ void main() {
       finance();
       await tester.pump();
       expect(find.textContaining('Access denied to Finance'), findsOneWidget);
-      openAdmin();
+      await openAdmin();
       await until(
         () => find.byType(RoomMembership).evaluate().isNotEmpty,
         'room admin opened',
@@ -112,10 +130,10 @@ void main() {
       expect(find.textContaining('Access denied to Finance'), findsNothing);
       final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
       await until(
-        () => world.current.toString() == '[2, 14]',
+        () => world.current.toString() == '[25, 23]',
         'granted room reached',
       );
-      openAdmin();
+      await openAdmin();
       await until(
         () => find.text('Choose a human').evaluate().isNotEmpty,
         'room admin reopened',
@@ -147,7 +165,7 @@ void main() {
           .onPressed!();
       await tester.pump();
       await until(
-        () => world.current.toString() == '[2, 2]',
+        () => world.current.toString() == '[14, 13]',
         'revocation returned to lobby',
       );
       finance();

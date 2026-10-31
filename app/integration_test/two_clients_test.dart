@@ -14,6 +14,13 @@ void main() {
   testWidgets('two independent macOS clients exchange and reconnect', (
     tester,
   ) async {
+    String snapshot() {
+      final worlds = find.byType(OfficeWorld).evaluate();
+      if (worlds.isEmpty) return 'no world';
+      final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
+      return 'me=${world.current} remote=${world.widget.remote.value.map((p) => '${p['actor']}@${p['room']}:${p['x']},${p['y']}').join(' ')}';
+    }
+
     Future<void> until(
       bool Function() condition,
       String label, {
@@ -22,6 +29,9 @@ void main() {
       for (var i = 0; i < attempts && !condition(); i++) {
         tester.binding.scheduleForcedFrame();
         await tester.pump(const Duration(milliseconds: 100));
+        if (i % 50 == 49) {
+          debugPrint('two-client $actor waiting for $label: ${snapshot()}');
+        }
       }
       if (!condition()) {
         final texts = find
@@ -100,9 +110,9 @@ void main() {
       debugPrint('two-client an sees van');
       await send('two-client move');
       await until(
-        () => sees('van', [8, 2]),
+        () => sees('van', [3, 3]),
         'other app movement',
-        attempts: 200,
+        attempts: 500,
       );
       await send('two-client observed');
       await until(
@@ -223,18 +233,18 @@ void main() {
       );
       world.goToRoom('dev');
       await until(
-        () => world.current.toString() == '[8, 2]',
+        () => world.current.toString() == '[3, 3]' && !world.walking,
         'local movement',
-        attempts: 100,
+        attempts: 300,
       );
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(seconds: 8)),
       );
       world.goToRoom('lobby');
       await until(
-        () => world.current.toString() == '[2, 2]',
+        () => world.current.toString() == '[14, 13]' && !world.walking,
         'return to lobby',
-        attempts: 100,
+        attempts: 300,
       );
       await until(
         () => message('an: two-client observed'),

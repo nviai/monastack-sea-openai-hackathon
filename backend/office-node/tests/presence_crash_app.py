@@ -49,8 +49,10 @@ data=json.load(sys.stdin)
 seq=0
 while True:
  seq+=1
- body=json.dumps({'session':data['session'],'room':'lobby','x':2,'y':3,'seq':seq}).encode()
- req=urllib.request.Request('http://127.0.0.1:'+str(data['port'])+'/v1/presence',data=body,method='POST',headers={'Authorization':'Bearer '+data['token'],'Content-Type':'application/json'})
+ req=urllib.request.Request('http://127.0.0.1:'+str(data['port'])+'/v1/realtime/ticket',data=b'{}',method='POST',headers={'Authorization':'Bearer '+data['token'],'Content-Type':'application/json'})
+ with urllib.request.urlopen(req,timeout=3) as response: issued=json.load(response)
+ body=json.dumps({'session':data['session'],'room':'lobby','x':13,'y':12,'seq':seq}).encode()
+ req=urllib.request.Request(issued['realtime_url']+'/v1/presence',data=body,method='POST',headers={'Authorization':'Ticket '+issued['ticket'],'Content-Type':'application/json'})
  with urllib.request.urlopen(req,timeout=3) as response: response.read()
  time.sleep(3)
 '''

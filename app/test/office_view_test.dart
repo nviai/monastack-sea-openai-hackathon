@@ -119,4 +119,62 @@ void main() {
     await tester.tapAt(point);
     expect(destinations.last, initial);
   });
+  testWidgets('clicking an offline agent opens its profile, not a walk', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final remote = ValueNotifier<List<Map<String, dynamic>>>([]);
+    addTearDown(remote.dispose);
+    final selected = <String>[];
+    final walks = <List<int>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OfficeWorld(
+            seed: const {
+              'rooms': [],
+              'actors': [
+                {'id': 'mona', 'name': 'Mona', 'kind': 'agent'},
+              ],
+            },
+            remote: remote,
+            actor: 'synthetic',
+            findPath: (start, goal) async {
+              walks.add(goal);
+              return null;
+            },
+            onPosition: (_, _) {},
+            onError: (_) {},
+            onSelectActor: selected.add,
+          ),
+        ),
+      ),
+    );
+    final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
+    // The asset read completes on the real event loop.
+    for (var i = 0; i < 100 && world.map == null; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pump(const Duration(milliseconds: 50));
+    final seat = world.map!.desks.firstWhere((d) => d.assignee == 'mona').seat;
+    final game = world.game;
+    final body = game.toScreen(
+      game.iso.project(seat.x.toDouble(), seat.y.toDouble(), 20),
+    );
+    await tester.tapAt(body);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(selected, ['mona']);
+    expect(walks, isEmpty);
+    await tester.tapAt(game.toScreen(game.iso.project(14, 14)));
+    expect(walks, [
+      [14, 14],
+    ]);
+  });
 }

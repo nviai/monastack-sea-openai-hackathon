@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix='monastack asset test ') as directory:
     for path in (core / 'target/debug', assets, project, records):
         path.mkdir(parents=True, exist_ok=True)
     (root / 'client/core').symlink_to(core, target_is_directory=True)
-    for name in ('map.v1.json', 'seed.v1.json'):
+    for name in ('map.v2.json', 'seed.v1.json'):
         (records / name).write_text('synthetic source ' + name)
         (assets / name).write_text('synthetic source ' + name)
     (core / 'target/debug/libmonastack_core.dylib').write_text('synthetic library')
@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='monastack asset test ') as directory:
     assert marker.exists()
     assert (root / 'build/Frameworks/libmonastack_core.dylib').read_text() == 'synthetic library'
     marker.unlink()
-    for name in ('map.v1.json', 'seed.v1.json'):
+    for name in ('map.v2.json', 'seed.v1.json'):
         asset = assets / name
         original = asset.read_text()
         asset.write_text('synthetic divergent asset')

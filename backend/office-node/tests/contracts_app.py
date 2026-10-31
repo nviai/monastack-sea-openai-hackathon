@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='monastack-contract-app-') as directory:
         payload=json.dumps({'id':secrets.token_hex(16),'name':'Synthetic customer','email':'','notes':'','op':secrets.token_hex(16)}).encode()
         req=urllib.request.Request(f'http://127.0.0.1:{port}/v1/customers',data=payload,method='POST',headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
         with urllib.request.urlopen(req,timeout=3) as response: assert response.status==201
-        subprocess.run(['flutter','test','integration_test/contracts_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=90)
+        subprocess.run(['flutter','test','integration_test/contracts_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=240)
         with sqlite3.connect(env['MONASTACK_DB']) as conn:
             assert conn.execute("SELECT title,terms,state FROM contract_proposals").fetchall()==[('Synthetic contract','Synthetic frozen terms','proposed')]
     finally:

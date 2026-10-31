@@ -45,6 +45,18 @@ impl OfficeCore {
                 "map room missing from seed".to_string(),
             ));
         }
+        let actors: HashSet<&str> = seed.actors.iter().map(|a| a.id.as_str()).collect();
+        if map
+            .desks
+            .iter()
+            .filter_map(|d| d.assignee.as_deref())
+            .any(|a| !actors.contains(a))
+        {
+            return Err(CoreError::new(
+                CoreErrorKind::InvalidMap,
+                "desk assignee missing from seed".to_string(),
+            ));
+        }
         Ok(OfficeCore { seed, map })
     }
 
@@ -57,11 +69,7 @@ impl OfficeCore {
     /// Room containing the cell, or `None` for a corridor or outside the map.
     #[flutter_rust_bridge::frb(sync)]
     pub fn room_at(&self, cell: Cell) -> Option<String> {
-        self.map
-            .rooms
-            .iter()
-            .find(|r| r.contains([cell.x, cell.y]))
-            .map(|r| r.id.clone())
+        self.map.room_at([cell.x, cell.y]).map(|r| r.id.clone())
     }
 
     /// Shortest walkable route including `start` and `goal`. When
@@ -105,7 +113,7 @@ mod tests {
     fn core() -> OfficeCore {
         OfficeCore::load(
             include_str!("../../../data/seed/nviai/seed.v1.json").into(),
-            include_str!("../../../data/seed/nviai/map.v1.json").into(),
+            include_str!("../../../data/seed/nviai/map.v2.json").into(),
         )
         .unwrap()
     }
@@ -182,6 +190,22 @@ mod tests {
                 "destination inaccessible"
             ))
         );
+    }
+
+    #[test]
+    fn desk_assignees_must_exist_in_the_seed() {
+        let map = include_str!("../../../data/seed/nviai/map.v2.json")
+            .replace("\"assignee\": \"mona\"", "\"assignee\": \"nobody\"");
+        assert!(matches!(
+            OfficeCore::load(
+                include_str!("../../../data/seed/nviai/seed.v1.json").into(),
+                map
+            ),
+            Err(CoreError {
+                kind: CoreErrorKind::InvalidMap,
+                ..
+            })
+        ));
     }
 
     #[test]

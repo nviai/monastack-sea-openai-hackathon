@@ -45,24 +45,33 @@ class PeopleProfiles extends StatelessWidget {
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             subtitle: Text(status, style: const TextStyle(fontSize: 11)),
-            onTap: () => showDialog<void>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text(actor['name'] as String),
-                content: Text(
-                  '${actor['kind']} · ${actor['role']}\n${isAgent ? 'No runtime connected.' : 'Presence is filtered by room access; absence does not imply offline.'}',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-            ),
+            onTap: () => showActorProfile(context, actor),
           ),
         );
       }).toList(),
+    ),
+  );
+}
+
+/// Profile dialog shared by the people list and the office canvas.
+Future<void> showActorProfile(
+  BuildContext context,
+  Map<String, dynamic> actor,
+) {
+  final isAgent = actor['kind'] == 'agent';
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(actor['name'] as String),
+      content: Text(
+        '${actor['kind']} · ${actor['role']}\n${isAgent ? 'No runtime connected.' : 'Presence is filtered by room access; absence does not imply offline.'}',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
     ),
   );
 }

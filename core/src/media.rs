@@ -1,8 +1,10 @@
-//! Fail-closed issuance state for a future media control plane.
+//! Fail-closed issuance state for one media room in the realtime control plane.
 //!
-//! This type does not start a media server, revoke existing tokens, authenticate
-//! callers, persist state, or serialize concurrent operations. An authority
-//! must do those things and check current membership atomically with issuance.
+//! The realtime service keeps one gate per Monastack room. Each generation
+//! corresponds to one media-server room; a rotation must confirm the previous
+//! media room was deleted before a new one is activated. This type does not
+//! itself call the media server, authenticate callers, persist state, or
+//! serialize concurrent operations; the realtime service does those things.
 //! Generations are sequence numbers, not secrets or authentication tokens.
 
 use std::collections::HashSet;
@@ -71,19 +73,27 @@ impl MediaGate {
         if generation != self.generation || self.phase != Phase::Starting {
             return Err("stale or invalid transition");
         }
-        if members.iter().any(|id| {
-            id.is_empty()
-                || id.len() > 80
-                || !id
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
-        }) {
+        if members.iter().any(|id| !valid_member(id)) {
             self.phase = Phase::Blocked;
             self.members.clear();
             return Err("invalid member");
         }
         self.members = members;
         self.phase = Phase::Active;
+        Ok(())
+    }
+
+    /// Adds an actor whose current authorization the caller has just verified
+    /// (for the realtime service, a signed ticket at the current access epoch).
+    /// Admission is cleared by the next rotation.
+    pub fn admit(&mut self, generation: u64, actor: &str) -> Result<(), &'static str> {
+        if generation != self.generation || self.phase != Phase::Active {
+            return Err("stale or invalid transition");
+        }
+        if !valid_member(actor) {
+            return Err("invalid member");
+        }
+        self.members.insert(actor.to_owned());
         Ok(())
     }
 
@@ -104,6 +114,14 @@ impl MediaGate {
             && currently_authorized
             && self.members.contains(actor)
     }
+}
+
+fn valid_member(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
 #[cfg(test)]
@@ -158,5 +176,22 @@ mod tests {
         assert!(gate.begin_rotation().is_err());
         assert_eq!(gate.phase(), Phase::Blocked);
         assert!(!gate.may_issue(u64::MAX, "alice", true));
+    }
+    #[test]
+    fn admission_is_per_generation_and_cleared_by_rotation() {
+        let mut gate = MediaGate::default();
+        let first = gate.begin_rotation().unwrap();
+        assert!(gate.admit(first, "alice").is_err());
+        gate.confirm_stopped(first).unwrap();
+        gate.activate(first, HashSet::new()).unwrap();
+        assert!(!gate.may_issue(first, "alice", true));
+        gate.admit(first, "alice").unwrap();
+        assert!(gate.may_issue(first, "alice", true));
+        assert!(gate.admit(first, "bad id").is_err());
+        let next = gate.begin_rotation().unwrap();
+        assert!(gate.admit(first, "alice").is_err());
+        gate.confirm_stopped(next).unwrap();
+        gate.activate(next, HashSet::new()).unwrap();
+        assert!(!gate.may_issue(next, "alice", true));
     }
 }

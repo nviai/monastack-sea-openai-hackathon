@@ -14,6 +14,10 @@ import 'package:monastack/features/customers/customer_directory.dart';
 import 'package:monastack/features/customers/contracts.dart';
 import 'package:monastack/features/customers/bookings.dart';
 import 'package:monastack/features/office/communication/chat_history.dart';
+import 'package:monastack/features/office/presence/realtime_session.dart';
+import 'package:monastack/features/office/voice/voice_controller.dart';
+import 'package:monastack/features/office/voice/voice_panel.dart';
+import 'package:monastack/features/office/communication/workspace_tools.dart';
 import 'package:monastack/features/office/rooms/room_membership.dart';
 import 'package:monastack/features/knowledge/document_library.dart';
 import 'package:monastack/features/agents/job_queue.dart';
@@ -38,6 +42,7 @@ class Collaboration extends StatefulWidget {
     required this.rooms,
     required this.onIdentity,
     required this.onPermissions,
+    this.speaking,
   });
   final String room;
   final ValueNotifier<List<int>> position;
@@ -46,6 +51,9 @@ class Collaboration extends StatefulWidget {
   final List<Map<String, dynamic>> rooms;
   final void Function(String?) onIdentity;
   final void Function(List<String>) onPermissions;
+
+  /// Receives the actors currently speaking in voice, for the office view.
+  final ValueNotifier<Set<String>>? speaking;
   @override
   State<Collaboration> createState() => _CollaborationState();
 }
@@ -63,6 +71,21 @@ class _CollaborationState extends State<Collaboration> {
   String status = 'Disconnected';
   List<dynamic> messages = [];
   int online = 0;
+
+  /// Realtime presence is a separate capability; chat keeps working when it
+  /// is unavailable.
+  RealtimeSession? realtime;
+  bool presenceAvailable = false;
+  Timer? presenceTimer;
+  bool presenceBusy = false;
+  List<int>? published;
+  String? publishedRoom;
+  DateTime publishedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  VoiceController? voice;
+
+  /// Consecutive presence failures; the last snapshot is kept for a few
+  /// seconds so one dropped request does not make everyone vanish.
+  int presenceFailures = 0;
   int sequence = 0;
   bool busy = false;
   bool sending = false;
@@ -115,6 +138,16 @@ class _CollaborationState extends State<Collaboration> {
   Future<void> connect() async {
     try {
       final me = await request('GET', '/v1/me') as Map<String, dynamic>;
+      final credential = token.text.trim();
+      realtime = RealtimeSession(
+        client: client,
+        issue: () => _requestWithCredential(
+          'POST',
+          '/v1/realtime/ticket',
+          const <String, dynamic>{},
+          credential,
+        ),
+      );
       if (!mounted) return;
       setState(() {
         identity = me['actor'] as String;
@@ -130,7 +163,6 @@ class _CollaborationState extends State<Collaboration> {
         );
       }
       final capturedSession = session;
-      final credential = token.text.trim();
       try {
         if (authority == null ||
             !RegExp(r'^[a-f0-9-]{36}$').hasMatch(authority)) {
@@ -197,7 +229,16 @@ class _CollaborationState extends State<Collaboration> {
       }
       timer?.cancel();
       timer = Timer.periodic(const Duration(seconds: 5), (_) => refresh());
+      presenceTimer?.cancel();
+      presenceTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => refreshPresence(),
+      );
+      voice?.dispose();
+      voice = VoiceController(realtime: realtime!, session: () => session)
+        ..addListener(_voiceChanged);
       await refresh();
+      await refreshPresence();
     } catch (_) {
       if (mounted) setState(() => status = 'Connection failed');
     }
@@ -208,20 +249,12 @@ class _CollaborationState extends State<Collaboration> {
     busy = true;
     final requestedScope = scope;
     final requestedRoom = widget.room;
-    final requestedPosition = List<int>.of(widget.position.value);
     final requestedIdentity = identity;
     try {
       final rooms = (await request('GET', '/v1/rooms') as List).cast<String>();
       if (!mounted || identity != requestedIdentity) return;
       widget.onPermissions(rooms);
-      await request('POST', '/v1/presence', {
-        'session': session,
-        'room': requestedRoom,
-        'x': requestedPosition[0],
-        'y': requestedPosition[1],
-        'seq': ++sequence,
-      });
-      final people = await request('GET', '/v1/presence') as List<dynamic>;
+      unawaited(voice?.refreshAvailability());
       final chat = await request(
         'GET',
         '/v1/messages/${Uri.encodeComponent(requestedScope)}',
@@ -257,11 +290,6 @@ class _CollaborationState extends State<Collaboration> {
             !messageScroll.hasClients ||
             messageScroll.position.maxScrollExtent - messageScroll.offset < 40;
         setState(() {
-          online = people.length;
-          widget.remote.value = people
-              .cast<Map<String, dynamic>>()
-              .where((p) => p['session'] != session)
-              .toList();
           messages = chat;
           status = 'Connected';
         });
@@ -292,6 +320,77 @@ class _CollaborationState extends State<Collaboration> {
           identity != null &&
           (scope != requestedScope || widget.room != requestedRoom)) {
         refresh();
+      }
+    }
+  }
+
+  /// Publishes this session's position when it changed (or every 5 s as a
+  /// heartbeat) and reads visible presence. Runs every second and right after
+  /// movement; a failure only affects presence, never chat.
+  Future<void> refreshPresence() async {
+    final presence = realtime;
+    if (identity == null || presence == null || presenceBusy || disconnecting) {
+      return;
+    }
+    presenceBusy = true;
+    final requestedIdentity = identity;
+    final requestedRoom = widget.room;
+    final position = List<int>.of(widget.position.value);
+    try {
+      final now = DateTime.now();
+      final moved =
+          published == null ||
+          published![0] != position[0] ||
+          published![1] != position[1] ||
+          publishedRoom != requestedRoom;
+      if (position.every((c) => c >= 0) &&
+          (moved || now.difference(publishedAt).inSeconds >= 5)) {
+        await presence.request('POST', '/v1/presence', {
+          'session': session,
+          'room': requestedRoom,
+          'x': position[0],
+          'y': position[1],
+          'seq': ++sequence,
+        });
+        published = position;
+        publishedRoom = requestedRoom;
+        publishedAt = now;
+      }
+      final people = await presence.request('GET', '/v1/presence') as List;
+      presenceFailures = 0;
+      if (mounted && identity == requestedIdentity && !disconnecting) {
+        setState(() {
+          presenceAvailable = true;
+          online = people.length;
+          widget.remote.value = people
+              .cast<Map<String, dynamic>>()
+              .where((p) => p['session'] != session)
+              .toList();
+        });
+      }
+    } catch (_) {
+      // Presence failure leaves text chat available.
+      published = null;
+      if (++presenceFailures >= 3 &&
+          mounted &&
+          identity == requestedIdentity &&
+          !disconnecting) {
+        setState(() {
+          presenceAvailable = false;
+          online = 0;
+          widget.remote.value = [];
+        });
+      }
+    } finally {
+      presenceBusy = false;
+      final current = widget.position.value;
+      if (mounted &&
+          identity != null &&
+          !disconnecting &&
+          (current[0] != position[0] ||
+              current[1] != position[1] ||
+              widget.room != requestedRoom)) {
+        positionChanged();
       }
     }
   }
@@ -352,10 +451,15 @@ class _CollaborationState extends State<Collaboration> {
     }
   }
 
+  void _voiceChanged() {
+    widget.speaking?.value = voice?.value.speaking ?? const {};
+  }
+
   Future<void> disconnect() async {
     if (disconnecting) return;
     disconnecting = true;
     timer?.cancel();
+    presenceTimer?.cancel();
     movementTimer?.cancel();
     final waitForSend = sending;
     while (sending && mounted) {
@@ -369,6 +473,10 @@ class _CollaborationState extends State<Collaboration> {
       if (!mounted) return;
       disconnecting = false;
       timer = Timer.periodic(const Duration(seconds: 5), (_) => refresh());
+      presenceTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => refreshPresence(),
+      );
       setState(() => status = 'Send failed; message kept in draft');
       return;
     }
@@ -376,18 +484,29 @@ class _CollaborationState extends State<Collaboration> {
       await taskDelivery?.waitForDrain();
       await chatDelivery?.waitForDrain();
     } catch (_) {}
-    while (busy && mounted) {
+    while ((busy || presenceBusy) && mounted) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     if (!mounted) return;
+    final closing = voice;
+    voice = null;
+    await closing?.leave();
+    closing?.dispose();
+    widget.speaking?.value = const {};
     try {
-      await request('DELETE', '/v1/presence/${Uri.encodeComponent(session)}');
+      await realtime?.request(
+        'DELETE',
+        '/v1/presence/${Uri.encodeComponent(session)}',
+      );
     } catch (_) {
       /* expiry handles offline disconnects */
     }
     if (!mounted) return;
     setState(() {
       identity = null;
+      realtime = null;
+      presenceAvailable = false;
+      published = null;
       taskDelivery = null;
       chatDelivery = null;
       queuedTasks = [];
@@ -422,7 +541,7 @@ class _CollaborationState extends State<Collaboration> {
 
   void positionChanged() {
     if (movementTimer?.isActive ?? false) return;
-    movementTimer = Timer(const Duration(milliseconds: 350), refresh);
+    movementTimer = Timer(const Duration(milliseconds: 120), refreshPresence);
   }
 
   @override
@@ -441,13 +560,17 @@ class _CollaborationState extends State<Collaboration> {
     if (old.room != widget.room && identity != null) {
       messages = [];
       refresh();
+      refreshPresence();
+      voice?.follow(widget.room);
     }
   }
 
   @override
   void dispose() {
     timer?.cancel();
+    presenceTimer?.cancel();
     movementTimer?.cancel();
+    voice?.dispose();
     widget.position.removeListener(positionChanged);
     client.close(force: true);
     queueNotifier.dispose();
@@ -506,13 +629,17 @@ class _CollaborationState extends State<Collaboration> {
           ],
         ),
         const Text(
-          'Local node only · voice unavailable',
+          'Local node only · voice needs a connected node',
           style: TextStyle(fontSize: 11, color: Colors.black54),
         ),
       ] else ...[
-        PopupMenuButton<String>(
-          tooltip: 'Workspace tools',
-          onSelected: (choice) {
+        TextButton.icon(
+          onPressed: () async {
+            final choice = await showDialog<String>(
+              context: context,
+              builder: (context) => const WorkspaceTools(),
+            );
+            if (choice == null || !mounted) return;
             final Widget target = switch (choice) {
               'tasks' => TaskBoard(
                 request: taskRequest,
@@ -565,37 +692,11 @@ class _CollaborationState extends State<Collaboration> {
               'incidents' => Incidents(request: request, identity: identity),
               _ => LeaveRequests(request: request, identity: identity),
             };
+            if (!context.mounted) return;
             showDialog<void>(context: context, builder: (context) => target);
           },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'tasks', child: Text('Open task board')),
-            PopupMenuItem(value: 'agents', child: Text('Agent proposals')),
-            PopupMenuItem(value: 'room-admin', child: Text('Room membership')),
-            PopupMenuItem(value: 'documents', child: Text('Documents')),
-            PopupMenuItem(value: 'inference', child: Text('Local text model')),
-            PopupMenuItem(value: 'customers', child: Text('Customers')),
-            PopupMenuItem(value: 'sales', child: Text('Sales pipeline')),
-            PopupMenuItem(
-              value: 'contracts',
-              child: Text('Contract proposals'),
-            ),
-            PopupMenuItem(value: 'bookings', child: Text('Customer bookings')),
-            PopupMenuItem(value: 'support', child: Text('Customer support')),
-            PopupMenuItem(value: 'meetings', child: Text('Meetings')),
-            PopupMenuItem(value: 'whiteboard', child: Text('Whiteboard')),
-            PopupMenuItem(value: 'expenses', child: Text('Expense approvals')),
-            PopupMenuItem(value: 'journals', child: Text('Journal entries')),
-            PopupMenuItem(
-              value: 'payments',
-              child: Text('Payment authorizations'),
-            ),
-            PopupMenuItem(value: 'leave', child: Text('Leave requests')),
-            PopupMenuItem(value: 'incidents', child: Text('Incidents')),
-          ],
-          child: const Padding(
-            padding: EdgeInsets.all(8),
-            child: Text('Workspace tools'),
-          ),
+          icon: const Icon(Icons.apps, size: 18),
+          label: const Text('Workspace tools'),
         ),
         if (outboxError != null)
           Text(
@@ -624,8 +725,25 @@ class _CollaborationState extends State<Collaboration> {
             ),
             child: Text('Task changes pending/rejected: ${queuedTasks.length}'),
           ),
+        if (voice != null)
+          VoicePanel(
+            controller: voice!,
+            room: widget.room,
+            roomName:
+                widget.rooms
+                        .where((r) => r['id'] == widget.room)
+                        .firstOrNull?['name']
+                    as String? ??
+                widget.room,
+            names: {
+              for (final a in widget.actors)
+                a['id'] as String: a['name'] as String,
+            },
+          ),
         Text(
-          '$online visible session(s) · voice unavailable',
+          presenceAvailable
+              ? '$online visible session(s)'
+              : 'Presence unavailable · text chat still works',
           style: const TextStyle(fontSize: 11, color: Colors.black54),
         ),
         DropdownButton<String>(

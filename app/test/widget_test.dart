@@ -16,7 +16,7 @@ void main() {
     await CoreBridge.ensureInitialized();
     core = await OfficeCore.load(
       seedJson: File('assets/seed.v1.json').readAsStringSync(),
-      mapJson: File('assets/map.v1.json').readAsStringSync(),
+      mapJson: File('assets/map.v2.json').readAsStringSync(),
     );
   });
   tearDownAll(() => core.dispose());
@@ -50,16 +50,16 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       await tester.runAsync(() => world.goToRoom('dev'));
-      for (var i = 0; i < 30; i++) {
-        await tester.pump(const Duration(milliseconds: 150));
+      for (var i = 0; i < 200 && world.current.toString() != '[3, 3]'; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(world.current, [8, 2]);
+      expect(world.current, [3, 3]);
       await tester.tap(find.text('Finance').first);
       await tester.pump();
       expect(find.textContaining('Access denied'), findsOneWidget);
-      expect(world.current, [8, 2]);
+      expect(world.current, [3, 3]);
       world.policyChanged(reset: true);
-      expect(world.current, [2, 2]);
+      expect(world.current, [14, 13]);
     },
   );
 }

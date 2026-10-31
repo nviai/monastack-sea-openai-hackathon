@@ -43,6 +43,6 @@ with tempfile.TemporaryDirectory(prefix='monastack-worker-app-') as directory:
         assert request('van','POST','jobs',{'id':job,'agent':'dev-agent','task':None,'instruction':'Synthetic app host report','budget':5,'op':secrets.token_hex(16)})==201
         assert request('an','POST',f'jobs/{job}/decision',{'action':'approve','expected_version':1,'op':secrets.token_hex(16)})==200
         subprocess.run([sys.executable,str(root/'backend/process-node/worker.py'),'--node',base,'--token-file',str(token_file),'--image',image,'--command-file',str(command),'--scratch-root',str(tmp)],check=True,timeout=35)
-        subprocess.run(['flutter','test','integration_test/host_report_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=90)
+        subprocess.run(['flutter','test','integration_test/host_report_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=240)
     finally:
         server.terminate();server.wait(timeout=5)

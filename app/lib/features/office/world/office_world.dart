@@ -1,11 +1,14 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:monastack/features/office/presence/remote_motion.dart';
+import 'package:monastack/features/office/world/office_map.dart';
+import 'package:monastack/features/office/world/office_scene.dart';
+import 'package:monastack/features/office/world/world_game.dart';
 
 /// Resolves a walkable route including both ends, or `null` when the goal is
 /// blocked or requires membership. Throws when the map service is unavailable.
@@ -13,6 +16,13 @@ typedef RouteFinder = Future<List<List<int>>?> Function(
   List<int> start,
   List<int> goal,
 );
+
+/// Room containing a cell according to the Rust core; `null` for corridors.
+typedef RoomLocator = String? Function(List<int> cell);
+
+/// Room that corridor positions are reported in. Corridors are shared space
+/// with the lobby's chat and access policy.
+const corridorRoom = 'lobby';
 
 class OfficeWorld extends StatefulWidget {
   const OfficeWorld({
@@ -23,36 +33,100 @@ class OfficeWorld extends StatefulWidget {
     required this.findPath,
     required this.onPosition,
     required this.onError,
+    this.locateRoom,
+    this.accessibleRooms,
+    this.onSelectActor,
+    this.speaking,
   });
   final Map<String, dynamic> seed;
   final ValueNotifier<List<Map<String, dynamic>>> remote;
   final String actor;
   final RouteFinder findPath;
+  final RoomLocator? locateRoom;
   final void Function(List<int>, String) onPosition;
   final void Function(String) onError;
+
+  /// Rooms the viewer may enter (dims the others), or `null` when unknown.
+  final Set<String>? accessibleRooms;
+  final void Function(String actor)? onSelectActor;
+
+  /// Actors currently speaking in voice; drawn with a ring.
+  final ValueListenable<Set<String>>? speaking;
   @override
   State<OfficeWorld> createState() => OfficeWorldState();
 }
 
 class OfficeWorldState extends State<OfficeWorld> {
   final focus = FocusNode();
-  Map<String, dynamic>? map;
-  late final _WorldGame _game = _WorldGame(onStep: onStep);
-  List<int> current = [2, 2];
+  OfficeMap? map;
+  late final WorldGame _game = WorldGame(onStep: onStep);
   double gestureZoom = 1;
   Offset? lastFocal;
   bool reduceMotion = false;
   bool systemReduceMotion = false;
+  int _routeRequest = 0;
+
+  @visibleForTesting
+  WorldGame get game => _game;
+
+  /// Whether the local avatar is still stepping along a route.
+  bool get walking => _game.moving;
+
+  /// The cell the local avatar occupies or is stepping into.
+  List<int> get current => List.unmodifiable(_game.position);
+
+  List<int> get spawn {
+    final s = map?.spawn;
+    return s == null ? List.of(_game.position) : [s.x, s.y];
+  }
+
   @override
   void initState() {
     super.initState();
     widget.remote.addListener(updateRemote);
     updateRemote();
+    widget.speaking?.addListener(_updateSpeaking);
+    _configure();
     load();
   }
 
   void updateRemote() {
     _game.remote.updateSnapshot(widget.remote.value);
+  }
+
+  void _updateSpeaking() {
+    _game.speaking = widget.speaking?.value ?? const {};
+  }
+
+  void _configure() {
+    final seed = widget.seed;
+    final actors = (seed['actors'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final rooms = (seed['rooms'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    _game
+      ..self = widget.actor
+      ..accessibleRooms = widget.accessibleRooms
+      ..names = {for (final a in actors) a['id'] as String: a['name'] as String}
+      ..roomNames = {
+        for (final r in rooms) r['id'] as String: r['name'] as String,
+      }
+      ..restrictedRooms = {
+        for (final r in rooms)
+          if (r['restricted'] == true) r['id'] as String,
+      };
+    final agents = {
+      for (final a in actors)
+        if (a['kind'] == 'agent') a['id'] as String,
+    };
+    final m = map;
+    if (m != null) {
+      _game.agentSeats = [
+        for (final desk in m.desks)
+          if (agents.contains(desk.assignee))
+            (actor: desk.assignee!, seat: desk.seat),
+      ];
+    }
   }
 
   @override
@@ -69,46 +143,38 @@ class OfficeWorldState extends State<OfficeWorld> {
   }
 
   Future<void> load() async {
-    final decoded = jsonDecode(
-      await rootBundle.loadString('assets/map.v1.json'),
-    ) as Map<String, dynamic>;
+    final decoded = OfficeMap.fromJson(
+      jsonDecode(await rootBundle.loadString(mapAsset, cache: false))
+          as Map<String, dynamic>,
+    );
     if (!mounted) return;
-    setState(() {
-      map = decoded;
-      _game.map = decoded;
-      _game.labels = {
-        for (final r in widget.seed['rooms'] as List)
-          r['id'] as String: r['name'] as String,
-      };
-    });
+    final scene = OfficeScene(decoded);
+    setState(() => map = decoded);
+    _game.setScene(scene);
+    _configure();
+    _game.reset([decoded.spawn.x, decoded.spawn.y]);
+    widget.onPosition(spawn, _roomOf(spawn));
+  }
+
+  String _roomOf(List<int> cell) {
+    try {
+      return widget.locateRoom?.call(cell) ?? corridorRoom;
+    } catch (_) {
+      return corridorRoom;
+    }
   }
 
   void onStep(List<int> point) {
-    current = point;
-    final rooms = (map?['rooms'] as List? ?? []).cast<Map<String, dynamic>>();
-    String room = 'lobby';
-    for (final r in rooms) {
-      final b = (r['bounds'] as List).cast<int>();
-      if (point[0] >= b[0] &&
-          point[0] <= b[2] &&
-          point[1] >= b[1] &&
-          point[1] <= b[3]) {
-        room = r['id'] as String;
-        break;
-      }
-    }
-    widget.onPosition(List.of(point), room);
+    widget.onPosition(List.of(point), _roomOf(point));
   }
-
-  int _routeRequest = 0;
 
   /// Plans asynchronously; a newer request or a policy change discards the
   /// result. If the avatar stepped while planning, the route is replanned so
   /// it always starts at the current cell.
-  Future<void> moveTo(List<int> destination) async {
+  Future<void> moveTo(List<int> destination, {bool quiet = false}) async {
     final request = ++_routeRequest;
     for (var attempt = 0; attempt < 3; attempt++) {
-      final from = List<int>.of(current);
+      final from = current;
       List<List<int>>? route;
       try {
         route = await widget.findPath(from, destination);
@@ -120,12 +186,15 @@ class OfficeWorldState extends State<OfficeWorld> {
       }
       if (!mounted || request != _routeRequest) return;
       if (route == null) {
-        widget.onError('That destination is blocked or requires membership.');
+        if (!quiet) {
+          widget.onError('That destination is blocked or requires membership.');
+        }
         return;
       }
+      final now = current;
       if (route.isEmpty ||
-          route.first[0] != current[0] ||
-          route.first[1] != current[1]) {
+          route.first[0] != now[0] ||
+          route.first[1] != now[1]) {
         continue;
       }
       _game.route = route.skip(1).toList();
@@ -138,33 +207,39 @@ class OfficeWorldState extends State<OfficeWorld> {
     _routeRequest++;
     _game.route = [];
     if (reset) {
-      _game.reset();
-      current = [2, 2];
-      widget.onPosition([2, 2], 'lobby');
+      _game.reset(spawn);
+      widget.onPosition(spawn, corridorRoom);
     }
   }
 
   Future<void> goToRoom(String room) async {
-    if (map == null) return;
-    final r = (map!['rooms'] as List).cast<Map<String, dynamic>>().firstWhere(
-      (r) => r['id'] == room,
-    );
-    await moveTo((r['spawn'] as List).cast<int>());
+    final target = map?.roomById(room);
+    if (target == null) return;
+    final destination = [target.spawn.x, target.spawn.y];
+    await moveTo(destination);
   }
+
+  void centerOnMe() => _game.focusOn(current, zoomTo: 2);
 
   @override
   void didUpdateWidget(covariant OfficeWorld oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.speaking != widget.speaking) {
+      oldWidget.speaking?.removeListener(_updateSpeaking);
+      widget.speaking?.addListener(_updateSpeaking);
+      _updateSpeaking();
+    }
     if (oldWidget.remote != widget.remote) {
       oldWidget.remote.removeListener(updateRemote);
       widget.remote.addListener(updateRemote);
       updateRemote();
     }
+    _configure();
     if (oldWidget.actor != widget.actor) {
-      _game.reset();
-      current = [2, 2];
+      _routeRequest++;
+      _game.reset(spawn);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onPosition([2, 2], 'lobby');
+        if (mounted) widget.onPosition(spawn, _roomOf(spawn));
       });
     }
   }
@@ -172,6 +247,7 @@ class OfficeWorldState extends State<OfficeWorld> {
   @override
   void dispose() {
     widget.remote.removeListener(updateRemote);
+    widget.speaking?.removeListener(_updateSpeaking);
     focus.dispose();
     super.dispose();
   }
@@ -182,21 +258,35 @@ class OfficeWorldState extends State<OfficeWorld> {
     }
     final k = event.logicalKey;
     final p = current;
+    // Keys follow the floor grid: up/down along one wall, left/right along
+    // the other. Blocked steps are ignored silently.
+    final List<int>? next;
     if (k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.keyW) {
-      moveTo([p[0], p[1] - 1]);
+      next = [p[0], p[1] - 1];
     } else if (k == LogicalKeyboardKey.arrowDown ||
         k == LogicalKeyboardKey.keyS) {
-      moveTo([p[0], p[1] + 1]);
+      next = [p[0], p[1] + 1];
     } else if (k == LogicalKeyboardKey.arrowLeft ||
         k == LogicalKeyboardKey.keyA) {
-      moveTo([p[0] - 1, p[1]]);
+      next = [p[0] - 1, p[1]];
     } else if (k == LogicalKeyboardKey.arrowRight ||
         k == LogicalKeyboardKey.keyD) {
-      moveTo([p[0] + 1, p[1]]);
+      next = [p[0] + 1, p[1]];
     } else {
-      return KeyEventResult.ignored;
+      next = null;
     }
+    if (next == null) return KeyEventResult.ignored;
+    moveTo(next, quiet: true);
     return KeyEventResult.handled;
+  }
+
+  void _tap(Offset position) {
+    final actor = _game.actorAt(position);
+    if (actor != null && widget.onSelectActor != null) {
+      widget.onSelectActor!(actor);
+      return;
+    }
+    moveTo(_game.cellAt(position));
   }
 
   @override
@@ -205,24 +295,40 @@ class OfficeWorldState extends State<OfficeWorld> {
     onKeyEvent: key,
     child: Stack(
       children: [
-        GestureDetector(
-          onTapUp: (d) => moveTo(_game.cellAt(d.localPosition)),
-          onScaleStart: (d) {
-            gestureZoom = _game.zoom;
-            lastFocal = d.localFocalPoint;
+        Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent) {
+              final factor = event.scrollDelta.dy > 0 ? 1 / 1.1 : 1.1;
+              _game.zoomAt(_game.zoom * factor, event.localPosition);
+            }
           },
-          onScaleUpdate: (d) {
-            final previous = lastFocal ?? d.localFocalPoint;
-            _game.zoomAt(gestureZoom * d.scale, previous);
-            _game.pan += d.localFocalPoint - previous;
-            lastFocal = d.localFocalPoint;
-          },
-          onScaleEnd: (_) => lastFocal = null,
-          child: GameWidget(game: _game),
+          child: MouseRegion(
+            onHover: (e) => _game.hover = e.localPosition,
+            onExit: (_) => _game.hover = null,
+            child: GestureDetector(
+              onTapUp: (d) => _tap(d.localPosition),
+              onScaleStart: (d) {
+                gestureZoom = _game.zoom;
+                lastFocal = d.localFocalPoint;
+                _game.follow = false;
+              },
+              onScaleUpdate: (d) {
+                final previous = lastFocal ?? d.localFocalPoint;
+                _game.zoomAt(gestureZoom * d.scale, previous);
+                _game.pan += d.localFocalPoint - previous;
+                lastFocal = d.localFocalPoint;
+              },
+              onScaleEnd: (_) {
+                lastFocal = null;
+                _game.follow = true;
+              },
+              child: GameWidget(game: _game),
+            ),
+          ),
         ),
         Positioned(
-          right: 8,
-          top: 8,
+          right: 10,
+          top: 10,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -243,6 +349,11 @@ class OfficeWorldState extends State<OfficeWorld> {
                 ),
               ),
               IconButton.filledTonal(
+                tooltip: 'Center on me',
+                onPressed: centerOnMe,
+                icon: const Icon(Icons.my_location),
+              ),
+              IconButton.filledTonal(
                 tooltip: 'Zoom out',
                 onPressed: () => _game.zoomAt(_game.zoom / 1.25, _game.center),
                 icon: const Icon(Icons.remove),
@@ -260,334 +371,20 @@ class OfficeWorldState extends State<OfficeWorld> {
             ],
           ),
         ),
+        Positioned(
+          left: 12,
+          bottom: 10,
+          child: IgnorePointer(
+            child: Text(
+              'Click to walk · WASD/arrows · drag to pan · scroll to zoom',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.black.withValues(alpha: .45),
+              ),
+            ),
+          ),
+        ),
       ],
     ),
   );
-}
-
-class _WorldGame extends FlameGame {
-  _WorldGame({required this.onStep});
-  final void Function(List<int>) onStep;
-  Map<String, dynamic>? map;
-  Map<String, String> labels = {};
-  final RemoteMotion remote = RemoteMotion();
-  bool reducedMotion = false;
-  List<List<int>> route = [];
-  List<int> position = [2, 2];
-  double elapsed = 0;
-  void reset() {
-    route = [];
-    position = [2, 2];
-    elapsed = 0;
-  }
-
-  @override
-  Color backgroundColor() => const Color(0xffe6e8dd);
-  double zoom = 1;
-  Offset pan = Offset.zero;
-  double get baseScale => math.min(size.x / 850, size.y / 500).clamp(.3, 1.5);
-  double get scale => baseScale * zoom;
-  Offset project(double x, double y) => Offset((x - y) * 22, (x + y) * 11);
-  Offset get center => Offset(size.x / 2, size.y / 2);
-  Offset get origin => Offset(size.x / 2, size.y / 2 - 187 * baseScale) + pan;
-  void zoomAt(double value, Offset focal) {
-    final point = (focal - origin) / scale;
-    zoom = value.clamp(.5, 2.5);
-    pan += focal - (origin + point * scale);
-  }
-
-  void resetView() {
-    zoom = 1;
-    pan = Offset.zero;
-  }
-
-  void drawFurnishing(Canvas canvas, Offset p, String kind) {
-    canvas.drawOval(
-      Rect.fromCenter(center: p + const Offset(0, 4), width: 26, height: 8),
-      Paint()..color = const Color(0x22000000),
-    );
-    if (kind == 'plant') {
-      final pot = Path()
-        ..moveTo(p.dx - 6, p.dy - 6)
-        ..lineTo(p.dx + 6, p.dy - 6)
-        ..lineTo(p.dx + 4, p.dy + 2)
-        ..lineTo(p.dx - 4, p.dy + 2)
-        ..close();
-      canvas.drawPath(pot, Paint()..color = const Color(0xffb67c64));
-      canvas.drawLine(
-        p + const Offset(0, -7),
-        p + const Offset(0, -19),
-        Paint()
-          ..color = const Color(0xff547963)
-          ..strokeWidth = 2,
-      );
-      canvas.drawOval(
-        Rect.fromCenter(center: p + const Offset(-4, -17), width: 9, height: 6),
-        Paint()..color = const Color(0xff6c9678),
-      );
-      canvas.drawOval(
-        Rect.fromCenter(center: p + const Offset(4, -21), width: 9, height: 6),
-        Paint()..color = const Color(0xff84a889),
-      );
-      canvas.drawOval(
-        Rect.fromCenter(center: p + const Offset(-1, -25), width: 7, height: 9),
-        Paint()..color = const Color(0xff739e7d),
-      );
-    } else if (kind == 'sofa') {
-      final seat = Path()
-        ..moveTo(p.dx - 13, p.dy - 7)
-        ..lineTo(p.dx, p.dy - 13)
-        ..lineTo(p.dx + 13, p.dy - 7)
-        ..lineTo(p.dx, p.dy - 1)
-        ..close();
-      final front = Path()
-        ..moveTo(p.dx - 13, p.dy - 7)
-        ..lineTo(p.dx, p.dy - 1)
-        ..lineTo(p.dx + 13, p.dy - 7)
-        ..lineTo(p.dx + 13, p.dy)
-        ..lineTo(p.dx, p.dy + 6)
-        ..lineTo(p.dx - 13, p.dy)
-        ..close();
-      canvas.drawPath(front, Paint()..color = const Color(0xffa7786c));
-      canvas.drawPath(seat, Paint()..color = const Color(0xffd9a798));
-      canvas.drawLine(
-        p + const Offset(-12, -10),
-        p + const Offset(0, -16),
-        Paint()
-          ..color = const Color(0xffbd8e80)
-          ..strokeWidth = 5
-          ..strokeCap = StrokeCap.round,
-      );
-    } else if (kind == 'table') {
-      canvas.drawLine(
-        p + const Offset(0, -3),
-        p + const Offset(0, 3),
-        Paint()
-          ..color = const Color(0xff94755d)
-          ..strokeWidth = 3,
-      );
-      canvas.drawOval(
-        Rect.fromCenter(center: p + const Offset(0, -7), width: 25, height: 12),
-        Paint()..color = const Color(0xffc69f7f),
-      );
-      canvas.drawOval(
-        Rect.fromCenter(center: p + const Offset(0, -9), width: 25, height: 12),
-        Paint()..color = const Color(0xffe2c6a6),
-      );
-      canvas.drawCircle(
-        p + const Offset(3, -10),
-        2,
-        Paint()..color = const Color(0xff9ab3a6),
-      );
-    }
-  }
-
-  List<int> cellAt(Offset point) {
-    final o = (point - origin) / scale;
-    final x = (o.dx / 22 + o.dy / 11) / 2;
-    final y = (o.dy / 11 - o.dx / 22) / 2;
-    return [x.round(), y.round()];
-  }
-
-  @override
-  void update(double dt) {
-    super.update(dt);
-    remote.advance(dt);
-    if (route.isEmpty) return;
-    if (reducedMotion) {
-      position = route.last;
-      route.clear();
-      elapsed = 0;
-      onStep(position);
-      return;
-    }
-    elapsed += dt;
-    if (elapsed >= .13) {
-      elapsed = 0;
-      position = route.removeAt(0);
-      onStep(position);
-    }
-  }
-
-  @override
-  void render(Canvas canvas) {
-    super.render(canvas);
-    final m = map;
-    if (m == null) return;
-    canvas.save();
-    canvas.translate(origin.dx, origin.dy);
-    canvas.scale(scale);
-    final rooms = (m['rooms'] as List).cast<Map<String, dynamic>>();
-    final props = (m['props'] as List? ?? []).cast<Map<String, dynamic>>();
-    for (int sum = 0; sum < 35; sum++) {
-      for (int x = 0; x < 18; x++) {
-        final y = sum - x;
-        if (y < 0 || y >= 18) continue;
-        final p = project(x.toDouble(), y.toDouble());
-        Map<String, dynamic>? room;
-        for (final r in rooms) {
-          final b = (r['bounds'] as List).cast<int>();
-          if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) {
-            room = r;
-            break;
-          }
-        }
-        bool wall = false;
-        if (room != null) {
-          final b = (room['bounds'] as List).cast<int>();
-          final d = (room['door'] as List).cast<int>();
-          wall =
-              (x == b[0] || x == b[2] || y == b[1] || y == b[3]) &&
-              !(x == d[0] && y == d[1]);
-        }
-        final tile = Path()
-          ..moveTo(p.dx, p.dy - 10)
-          ..lineTo(p.dx + 21, p.dy)
-          ..lineTo(p.dx, p.dy + 10)
-          ..lineTo(p.dx - 21, p.dy)
-          ..close();
-        canvas.drawPath(
-          tile,
-          Paint()
-            ..color = wall
-                ? const Color(0xff94aa99)
-                : room == null
-                ? const Color(0xffd6dcd1)
-                : const Color(0xfff5e9d9),
-        );
-        canvas.drawPath(
-          tile,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = .5
-            ..color = const Color(0xffd4d6c9),
-        );
-        if (wall) {
-          final top = tile.shift(const Offset(0, -8));
-          canvas.drawPath(
-            tile.shift(const Offset(0, -3)),
-            Paint()..color = const Color(0xff89a38f),
-          );
-          canvas.drawPath(top, Paint()..color = const Color(0xffb7c9b6));
-        }
-        for (final prop in props) {
-          final anchor = (prop['position'] as List).cast<int>();
-          if (anchor[0] != x || anchor[1] != y) {
-            continue;
-          }
-          if (const {'plant', 'sofa', 'table'}.contains(prop['type'])) {
-            drawFurnishing(canvas, p, prop['type'] as String);
-            continue;
-          }
-          if (prop['type'] != 'desk') continue;
-          canvas.drawOval(
-            Rect.fromCenter(
-              center: p + const Offset(0, 3),
-              width: 25,
-              height: 8,
-            ),
-            Paint()..color = const Color(0x22000000),
-          );
-          final face = Path()
-            ..moveTo(p.dx - 12, p.dy - 5)
-            ..lineTo(p.dx, p.dy + 1)
-            ..lineTo(p.dx + 12, p.dy - 5)
-            ..lineTo(p.dx + 12, p.dy + 1)
-            ..lineTo(p.dx, p.dy + 7)
-            ..lineTo(p.dx - 12, p.dy + 1)
-            ..close();
-          final top = Path()
-            ..moveTo(p.dx, p.dy - 11)
-            ..lineTo(p.dx + 12, p.dy - 5)
-            ..lineTo(p.dx, p.dy + 1)
-            ..lineTo(p.dx - 12, p.dy - 5)
-            ..close();
-          canvas.drawPath(face, Paint()..color = const Color(0xffa77c5c));
-          canvas.drawPath(top, Paint()..color = const Color(0xffdcb894));
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromCenter(
-                center: p + const Offset(0, -10),
-                width: 8,
-                height: 7,
-              ),
-              const Radius.circular(1),
-            ),
-            Paint()..color = const Color(0xff536e67),
-          );
-        }
-        for (final other in remote.avatars) {
-          final coordinate = other.position;
-          if (coordinate.dx.round() == x && coordinate.dy.round() == y) {
-            final avatarPoint = project(coordinate.dx, coordinate.dy);
-            canvas.drawCircle(
-              avatarPoint + const Offset(0, -13),
-              8,
-              Paint()..color = const Color(0xffb88166),
-            );
-            canvas.drawCircle(
-              avatarPoint + const Offset(0, -22),
-              6,
-              Paint()..color = const Color(0xffedbf9d),
-            );
-            final label = TextPainter(
-              text: TextSpan(
-                text: other.actor,
-                style: TextStyle(
-                  color: const Color(0xff30483f),
-                  fontSize: math.max(10, 10 / scale),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              textDirection: TextDirection.ltr,
-            )..layout(maxWidth: math.max(80, 80 / scale));
-            label.paint(
-              canvas,
-              Offset(
-                avatarPoint.dx - label.width / 2,
-                avatarPoint.dy - 28 - label.height,
-              ),
-            );
-          }
-        }
-        if (position[0] == x && position[1] == y) {
-          canvas.drawOval(
-            Rect.fromCenter(
-              center: p + const Offset(0, 4),
-              width: 22,
-              height: 8,
-            ),
-            Paint()..color = const Color(0x33000000),
-          );
-          canvas.drawCircle(
-            p + const Offset(0, -13),
-            8,
-            Paint()..color = const Color(0xff4c7468),
-          );
-          canvas.drawCircle(
-            p + const Offset(0, -22),
-            6,
-            Paint()..color = const Color(0xffedbf9d),
-          );
-        }
-      }
-    }
-    for (final room in rooms) {
-      final spawn = (room['spawn'] as List).cast<int>();
-      final p = project(spawn[0].toDouble(), spawn[1].toDouble());
-      final t = TextPainter(
-        text: TextSpan(
-          text: labels[room['id']] ?? room['id'],
-          style: TextStyle(
-            color: const Color(0xff30483f),
-            fontSize: math.max(10, 10 / scale),
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: math.max(100, 100 / scale));
-      t.paint(canvas, Offset(p.dx - t.width / 2, p.dy - 28 - t.height));
-    }
-    canvas.restore();
-  }
 }

@@ -53,6 +53,37 @@ Future<int> postJson(String token, String path, Object body) async {
   }
 }
 
+/// Reads presence from the realtime capability using a ticket issued by the
+/// authority for the given credential.
+Future<List<dynamic>> realtimePresence(String token) async {
+  final client = HttpClient();
+  try {
+    final port = Platform.environment['MONASTACK_NODE_PORT'] ?? '47830';
+    final issue = await client.postUrl(
+      Uri.parse('http://127.0.0.1:$port/v1/realtime/ticket'),
+    );
+    issue.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+    final issued = jsonDecode(
+      await utf8.decoder.bind(await issue.close()).join(),
+    ) as Map<String, dynamic>;
+    final read = await client.getUrl(
+      Uri.parse('${issued['realtime_url']}/v1/presence'),
+    );
+    read.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Ticket ${issued['ticket']}',
+    );
+    final response = await read.close();
+    if (response.statusCode != 200) {
+      throw HttpException('status ${response.statusCode}');
+    }
+    return jsonDecode(await utf8.decoder.bind(response).join())
+        as List<dynamic>;
+  } finally {
+    client.close();
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final anToken = Platform.environment['MONASTACK_TEST_AN'];
@@ -856,24 +887,24 @@ void main() {
     expect(otherIncidents, isEmpty);
     final world = tester.state<OfficeWorldState>(find.byType(OfficeWorld));
     await tester.tap(find.text('Dev & QA').first);
-    for (var i = 0; i < 80 && world.current.toString() != '[8, 2]'; i++) {
+    for (var i = 0; i < 300 && world.current.toString() != '[3, 3]'; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     debugPrint('integration: dev arrival');
-    expect(world.current, [8, 2]);
+    expect(world.current, [3, 3]);
     debugPrint('integration: starting presence read');
     List<dynamic> presence = [];
     for (var i = 0; i < 50; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      presence = (await tester.runAsync(() => getJson(vanToken!, 'presence')))!;
+      presence = (await tester.runAsync(() => realtimePresence(vanToken!)))!;
       if (presence.any(
-        (p) => p['actor'] == 'an' && p['x'] == 8 && p['y'] == 2,
+        (p) => p['actor'] == 'an' && p['x'] == 3 && p['y'] == 3,
       )) {
         break;
       }
     }
     expect(
-      presence.any((p) => p['actor'] == 'an' && p['x'] == 8 && p['y'] == 2),
+      presence.any((p) => p['actor'] == 'an' && p['x'] == 3 && p['y'] == 3),
       isTrue,
     );
     if (Platform.environment['MONASTACK_TEST_REVOCATION'] == '1') {
@@ -897,15 +928,15 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       debugPrint('integration: second identity connected');
       world.goToRoom('finance');
-      for (var i = 0; i < 150 && world.current.toString() != '[2, 14]'; i++) {
+      for (var i = 0; i < 400 && world.current.toString() != '[25, 23]'; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
       debugPrint('integration: finance arrival check');
-      expect(world.current, [2, 14]);
-      for (var i = 0; i < 120 && world.current.toString() != '[2, 2]'; i++) {
+      expect(world.current, [25, 23]);
+      for (var i = 0; i < 300 && world.current.toString() != '[14, 13]'; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(world.current, [2, 2]);
+      expect(world.current, [14, 13]);
       expect(find.textContaining('Room access changed'), findsOneWidget);
     }
   }, skip: anToken == null || vanToken == null);

@@ -109,12 +109,12 @@ void main() {
     expect(find.textContaining('Access denied to Finance'), findsNothing);
     debugPrint('membership test: navigating to finance');
     await until(
-      () => world.current.toString() == '[2, 14]',
+      () => world.current.toString() == '[25, 23]',
       'new membership allows navigation',
     );
     debugPrint('membership test: arrived');
     await until(
-      () => world.current.toString() == '[2, 2]',
+      () => world.current.toString() == '[14, 13]',
       'revocation returns to lobby',
       attempts: 350,
     );

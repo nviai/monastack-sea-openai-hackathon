@@ -31,6 +31,6 @@ with tempfile.TemporaryDirectory(prefix='monastack-balance-app-') as directory:
         entry=secrets.token_hex(16)
         assert post('van','journals',{'id':entry,'description':'Synthetic','debit':'cash','credit':'sales','minor':100,'currency':'VND','op':secrets.token_hex(16)})==201
         assert post('an',f'journals/{entry}/decision',{'action':'post','expected_version':1,'op':secrets.token_hex(16)})==200
-        subprocess.run(['flutter','test','integration_test/journal_balance_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=90)
+        subprocess.run(['flutter','test','integration_test/journal_balance_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=240)
     finally:
         server.terminate();server.wait(timeout=5)

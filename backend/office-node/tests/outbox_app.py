@@ -24,6 +24,6 @@ with tempfile.TemporaryDirectory(prefix='monastack-outbox-app-') as directory:
             except urllib.error.HTTPError: break
             except OSError: time.sleep(.05)
         else: raise RuntimeError('node did not start')
-        subprocess.run(['flutter','test','integration_test/outbox_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=90)
+        subprocess.run(['flutter','test','integration_test/outbox_test.dart','-d','macos'],cwd=root/'app',env=env,check=True,timeout=240)
     finally:
         server.terminate();server.wait(timeout=5)
