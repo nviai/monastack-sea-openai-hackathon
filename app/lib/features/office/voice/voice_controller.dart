@@ -21,6 +21,7 @@ class VoiceState {
     this.camera = false,
     this.participants = const {},
     this.speaking = const {},
+    this.audioLevels = const {},
     this.hearing = const {},
     this.videos = const {},
     this.message,
@@ -34,12 +35,13 @@ class VoiceState {
   /// Whether the local microphone is published. Always false on join.
   final bool microphone;
 
-  /// Whether the local camera is published. Always false on join.
+  /// Whether the local camera is actually published. Defaults on after join.
   final bool camera;
 
   /// Actor IDs of other participants, and of everyone currently speaking.
   final Set<String> participants;
   final Set<String> speaking;
+  final Map<String, double> audioLevels;
 
   /// Actors whose audio this client is receiving.
   final Set<String> hearing;
@@ -56,6 +58,7 @@ class VoiceState {
     bool? camera,
     Set<String>? participants,
     Set<String>? speaking,
+    Map<String, double>? audioLevels,
     Set<String>? hearing,
     Map<String, lk.VideoTrack>? videos,
     String? message,
@@ -67,6 +70,7 @@ class VoiceState {
     camera: camera ?? this.camera,
     participants: participants ?? this.participants,
     speaking: speaking ?? this.speaking,
+    audioLevels: audioLevels ?? this.audioLevels,
     hearing: hearing ?? this.hearing,
     videos: videos ?? this.videos,
     message: clearMessage ? null : (message ?? this.message),
@@ -75,13 +79,14 @@ class VoiceState {
 
 /// Joins the voice room for the room the user is in, through the realtime
 /// media control plane. Voice is opt-in per session, the microphone and the
-/// camera start off on every join, and leaving or losing access ends the
+/// camera follows the user preference on every join, and leaving or losing access ends the
 /// connection.
 class VoiceController extends ValueNotifier<VoiceState> {
   VoiceController({
     required this.realtime,
     required this.session,
     this.connector = _connect,
+    this.cameraOnJoin = true,
   }) : super(const VoiceState());
 
   final RealtimeSession realtime;
@@ -92,9 +97,14 @@ class VoiceController extends ValueNotifier<VoiceState> {
   /// Seam for tests; connects a LiveKit room.
   final Future<VoiceConnection> Function(String url, String token) connector;
 
+  final bool cameraOnJoin;
+  bool? _cameraPreference;
+  Timer? _audioMeter;
   VoiceConnection? _connection;
   String? _target;
   bool _wanted = false;
+  bool _autoJoinAllowed = true;
+  bool agentMuted = false;
   int _attempt = 0;
   bool _disposed = false;
 
@@ -125,17 +135,37 @@ class VoiceController extends ValueNotifier<VoiceState> {
 
   /// Called whenever the user's room changes.
   Future<void> follow(String room) async {
+    if (_target != room) _autoJoinAllowed = true;
     _target = room;
     if (_wanted && value.room != room) await _sync();
   }
 
+  Future<void> autoJoinAgentRoom(String room) async {
+    if (!_autoJoinAllowed ||
+        _disposed ||
+        _target != room ||
+        value.phase == VoicePhase.joined ||
+        value.phase == VoicePhase.joining) {
+      return;
+    }
+    await join(room);
+  }
+
+  Future<void> setAgentMuted(bool muted) async {
+    agentMuted = muted;
+    await _connection?.setAgentMuted(muted);
+    if (!_disposed) notifyListeners();
+  }
+
   Future<void> join(String room) async {
+    _autoJoinAllowed = true;
     _target = room;
     _wanted = true;
     await _sync();
   }
 
   Future<void> leave() async {
+    _autoJoinAllowed = false;
     _wanted = false;
     _attempt++;
     await _drop();
@@ -190,16 +220,17 @@ class VoiceController extends ValueNotifier<VoiceState> {
   /// Publishes the camera; it replaces this user's face in the office for
   /// everyone in the same voice room.
   Future<void> setCamera(bool enabled) async {
+    _cameraPreference = enabled;
     final connection = _connection;
     if (connection == null || value.phase != VoicePhase.joined) return;
     try {
       await connection.setCamera(enabled);
-      if (!_disposed) {
+      if (!_disposed && identical(_connection, connection)) {
         value = value.copyWith(camera: enabled, clearMessage: true);
         _update();
       }
     } catch (_) {
-      if (_disposed) return;
+      if (_disposed || !identical(_connection, connection)) return;
       try {
         await connection.setCamera(false);
       } catch (_) {}
@@ -212,6 +243,8 @@ class VoiceController extends ValueNotifier<VoiceState> {
   }
 
   Future<void> _drop() async {
+    _audioMeter?.cancel();
+    _audioMeter = null;
     final connection = _connection;
     _connection = null;
     await connection?.close();
@@ -244,10 +277,21 @@ class VoiceController extends ValueNotifier<VoiceState> {
           return;
         }
         _connection = connection;
+        _audioMeter = Timer.periodic(const Duration(milliseconds: 50), (_) {
+          if (_disposed || !identical(_connection, connection)) return;
+          final levels = connection.audioLevels();
+          if (!mapEquals(value.audioLevels, levels)) {
+            value = value.copyWith(audioLevels: levels);
+          }
+        });
+        await connection.setAgentMuted(agentMuted);
         connection.onChanged = _update;
         connection.onClosed = () => _closed(attempt);
         value = VoiceState(phase: VoicePhase.joined, room: room);
         _update();
+        if (_cameraPreference ?? cameraOnJoin) {
+          await setCamera(true);
+        }
         return;
       } on NodeFailure catch (e) {
         if (e.status == 409) {
@@ -290,6 +334,7 @@ class VoiceController extends ValueNotifier<VoiceState> {
     value = value.copyWith(
       participants: connection.participants(),
       speaking: connection.speaking(),
+      audioLevels: connection.audioLevels(),
       hearing: connection.hearing(),
       videos: connection.videos(),
     );
@@ -301,6 +346,8 @@ class VoiceController extends ValueNotifier<VoiceState> {
   void _closed(int attempt) {
     if (attempt != _attempt || _disposed) return;
     _connection = null;
+    _audioMeter?.cancel();
+    _audioMeter = null;
     value = VoiceState(
       phase: VoicePhase.joining,
       room: value.room,
@@ -330,8 +377,10 @@ abstract class VoiceConnection {
 
   /// Live camera tracks by actor, the local one included.
   Map<String, lk.VideoTrack> videos();
+  Map<String, double> audioLevels() => const {};
   Future<void> setMicrophone(bool enabled);
   Future<void> setCamera(bool enabled);
+  Future<void> setAgentMuted(bool muted) async {}
   Future<void> close();
 }
 
@@ -343,7 +392,10 @@ class _LiveKitConnection extends VoiceConnection {
       ..on<lk.ParticipantConnectedEvent>((_) => onChanged?.call())
       ..on<lk.ParticipantDisconnectedEvent>((_) => onChanged?.call())
       ..on<lk.ActiveSpeakersChangedEvent>((_) => onChanged?.call())
-      ..on<lk.TrackSubscribedEvent>((_) => onChanged?.call())
+      ..on<lk.TrackSubscribedEvent>((_) {
+        unawaited(_applyAgentMute());
+        onChanged?.call();
+      })
       ..on<lk.TrackUnsubscribedEvent>((_) => onChanged?.call())
       ..on<lk.TrackMutedEvent>((_) => onChanged?.call())
       ..on<lk.TrackUnmutedEvent>((_) => onChanged?.call())
@@ -357,6 +409,34 @@ class _LiveKitConnection extends VoiceConnection {
   final lk.Room room;
   final lk.EventsListener<lk.RoomEvent> listener;
   bool _closing = false;
+  bool _agentMuted = false;
+  static const _agents = {
+    'mona',
+    'dev-agent',
+    'qa-agent',
+    'pm-agent',
+    'sales-agent',
+    'cskh-agent',
+  };
+
+  Future<void> _applyAgentMute() async {
+    for (final p in room.remoteParticipants.values) {
+      if (!_agents.contains(_actorOf(p.identity))) continue;
+      for (final track in p.audioTrackPublications) {
+        if (_agentMuted) {
+          await track.disable();
+        } else {
+          await track.enable();
+        }
+      }
+    }
+  }
+
+  @override
+  Future<void> setAgentMuted(bool muted) async {
+    _agentMuted = muted;
+    await _applyAgentMute();
+  }
 
   @override
   Set<String> participants() => {
@@ -369,9 +449,15 @@ class _LiveKitConnection extends VoiceConnection {
   };
 
   @override
+  Map<String, double> audioLevels() => {
+    for (final p in room.remoteParticipants.values)
+      _actorOf(p.identity): p.isSpeaking ? p.audioLevel.clamp(0.0, 1.0) : 0.0,
+  };
+
+  @override
   Set<String> hearing() => {
     for (final p in room.remoteParticipants.values)
-      if (p.audioTrackPublications.any((t) => t.subscribed))
+      if (p.audioTrackPublications.any((t) => t.subscribed && t.enabled))
         _actorOf(p.identity),
   };
 

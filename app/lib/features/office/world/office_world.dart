@@ -1,3 +1,5 @@
+import 'package:monastack/features/office/world/agent_speech_layer.dart';
+
 import 'dart:convert';
 
 import 'package:flame/game.dart';
@@ -38,6 +40,9 @@ class OfficeWorld extends StatefulWidget {
     this.accessibleRooms,
     this.onSelectActor,
     this.speaking,
+    this.audioLevels,
+    this.onlineAgents,
+    this.agentPresentation,
     this.faces,
     this.onWorkspaceTools,
   });
@@ -56,6 +61,9 @@ class OfficeWorld extends StatefulWidget {
 
   /// Actors currently speaking in voice; drawn with a ring.
   final ValueListenable<Set<String>>? speaking;
+  final ValueListenable<Map<String, double>>? audioLevels;
+  final ValueListenable<Set<String>>? onlineAgents;
+  final ValueListenable<Map<String, dynamic>>? agentPresentation;
 
   /// Live camera views by actor. Each replaces that avatar's drawn face.
   final ValueListenable<Map<String, Widget>>? faces;
@@ -93,8 +101,11 @@ class OfficeWorldState extends State<OfficeWorld> {
     widget.remote.addListener(updateRemote);
     updateRemote();
     widget.speaking?.addListener(_updateSpeaking);
+    widget.onlineAgents?.addListener(_updateSpeaking);
+    widget.agentPresentation?.addListener(_updateAgentNames);
     widget.faces?.addListener(_updateFaces);
     _updateFaces();
+    _updateSpeaking();
     _configure();
     load();
   }
@@ -104,7 +115,18 @@ class OfficeWorldState extends State<OfficeWorld> {
   }
 
   void _updateSpeaking() {
+    _game.onlineAgents = widget.onlineAgents?.value ?? const {};
     _game.speaking = widget.speaking?.value ?? const {};
+  }
+
+  void _updateAgentNames() {
+    final updates = widget.agentPresentation?.value ?? {};
+    _game.riveFaces = updates.keys.toSet();
+    _game.names = {
+      ..._game.names,
+      for (final entry in updates.entries)
+        entry.key: entry.value['name'] as String,
+    };
   }
 
   void _updateFaces() {
@@ -128,6 +150,7 @@ class OfficeWorldState extends State<OfficeWorld> {
         for (final r in rooms)
           if (r['restricted'] == true) r['id'] as String,
       };
+    _updateAgentNames();
     final agents = {
       for (final a in actors)
         if (a['kind'] == 'agent') a['id'] as String,
@@ -242,6 +265,16 @@ class OfficeWorldState extends State<OfficeWorld> {
       widget.speaking?.addListener(_updateSpeaking);
       _updateSpeaking();
     }
+    if (oldWidget.onlineAgents != widget.onlineAgents) {
+      oldWidget.onlineAgents?.removeListener(_updateSpeaking);
+      widget.onlineAgents?.addListener(_updateSpeaking);
+      _updateSpeaking();
+    }
+    if (oldWidget.agentPresentation != widget.agentPresentation) {
+      oldWidget.agentPresentation?.removeListener(_updateAgentNames);
+      widget.agentPresentation?.addListener(_updateAgentNames);
+      _updateAgentNames();
+    }
     if (oldWidget.faces != widget.faces) {
       oldWidget.faces?.removeListener(_updateFaces);
       widget.faces?.addListener(_updateFaces);
@@ -265,6 +298,8 @@ class OfficeWorldState extends State<OfficeWorld> {
   @override
   void dispose() {
     widget.remote.removeListener(updateRemote);
+    widget.agentPresentation?.removeListener(_updateAgentNames);
+    widget.onlineAgents?.removeListener(_updateSpeaking);
     widget.speaking?.removeListener(_updateSpeaking);
     widget.faces?.removeListener(_updateFaces);
     focus.dispose();
@@ -348,6 +383,16 @@ class OfficeWorldState extends State<OfficeWorld> {
         if (widget.faces != null)
           Positioned.fill(
             child: FaceLayer(game: _game, faces: widget.faces!),
+          ),
+        if (widget.agentPresentation != null && widget.speaking != null)
+          Positioned.fill(
+            child: AgentSpeechLayer(
+              game: _game,
+              presentation: widget.agentPresentation!,
+              speaking: widget.speaking!,
+              audioLevels: widget.audioLevels,
+              reduceMotion: reduceMotion || systemReduceMotion,
+            ),
           ),
         Positioned(
           left: 10,

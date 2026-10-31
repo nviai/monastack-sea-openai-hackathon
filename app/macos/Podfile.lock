@@ -14,6 +14,8 @@ PODS:
     - flutter_webrtc
     - FlutterMacOS
     - WebRTC-SDK (= 150.7871.01)
+  - rive_native (0.0.1):
+    - FlutterMacOS
   - WebRTC-SDK (150.7871.01)
 
 DEPENDENCIES:
@@ -23,6 +25,7 @@ DEPENDENCIES:
   - flutter_webrtc (from `Flutter/ephemeral/.symlinks/plugins/flutter_webrtc/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - livekit_client (from `Flutter/ephemeral/.symlinks/plugins/livekit_client/macos`)
+  - rive_native (from `Flutter/ephemeral/.symlinks/plugins/rive_native/macos`)
 
 SPEC REPOS:
   trunk:
@@ -41,6 +44,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
   livekit_client:
     :path: Flutter/ephemeral/.symlinks/plugins/livekit_client/macos
+  rive_native:
+    :path: Flutter/ephemeral/.symlinks/plugins/rive_native/macos
 
 SPEC CHECKSUMS:
   connectivity_plus: 4adf20a405e25b42b9c9f87feff8f4b6fde18a4e
@@ -49,6 +54,7 @@ SPEC CHECKSUMS:
   flutter_webrtc: af708ba091a5d71e101f9f631a9f96c107581a3d
   FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   livekit_client: ef6e3fc11f7dfbba3a8534e4bc6c31d13bcd1b5d
+  rive_native: 50e8013d024db2bc4ce3a39b5f0f38c74117b395
   WebRTC-SDK: 7dc931c64c00c735a614382f1a59cf65019c3c17
 
 PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac

@@ -1,5 +1,7 @@
 # Hướng dẫn chạy Monastack từ đầu
 
+GPT-Live voice agent theo phòng: cài worker bằng `sh backend/live-agent/setup.sh`, bật `LIVE_AGENTS_ENABLED=1` trong `runtime/.env`; lệnh local office sẽ chạy worker cùng server. Xem [hướng dẫn vận hành](live-agent-voice.md).
+
 Client trên máy khác trong LAN: chạy `./tools/start-client.sh` để kết nối server `192.168.224.217`; xem [hướng dẫn client LAN](start-client-lan.vi.md).
 
 Muốn chạy ngay server + node client + app trên máy này với bind `0.0.0.0`: xem [cấu hình local đã thiết lập](local-office.vi.md).

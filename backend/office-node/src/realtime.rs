@@ -216,6 +216,7 @@ pub struct Realtime {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
     map: &'static monastack_core::map::Map,
     media: Option<Arc<crate::media::MediaControl>>,
+    live_agents: Option<Arc<crate::live_agents::Service>>,
 }
 
 impl Realtime {
@@ -226,7 +227,13 @@ impl Realtime {
             sessions: Arc::default(),
             map: crate::office_map(),
             media: None,
+            live_agents: None,
         }
+    }
+
+    pub fn with_live_agents(mut self, service: Arc<crate::live_agents::Service>) -> Self {
+        self.live_agents = Some(service);
+        self
     }
 
     /// Enables voice: starts the media control plane against this epoch.
@@ -241,6 +248,9 @@ impl Realtime {
         sessions.retain(|id, s| {
             let live = now - s.updated <= PRESENCE_SECONDS;
             if !live {
+                if let Some(agents) = &self.live_agents {
+                    agents.leave(id);
+                }
                 if let Some(media) = &self.media {
                     media.remove(id);
                 }
@@ -341,6 +351,9 @@ pub async fn update_presence(
     if !sessions.contains_key(&p.session) && sessions.len() >= 10_000 {
         return Err(crate::err(StatusCode::SERVICE_UNAVAILABLE, "presence full"));
     }
+    let agent_room = p.room.clone();
+    let agent_actor = ticket.actor.clone();
+    let agent_session = p.session.clone();
     sessions.insert(
         p.session,
         Session {
@@ -353,6 +366,10 @@ pub async fn update_presence(
             updated: now,
         },
     );
+    drop(sessions);
+    if let Some(agents) = &rt.live_agents {
+        agents.observe(&agent_actor, &agent_session, &agent_room, epoch);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -397,6 +414,9 @@ pub async fn leave_presence(
         .is_some_and(|s| s.actor == ticket.actor)
     {
         sessions.remove(&session);
+        if let Some(agents) = &rt.live_agents {
+            agents.leave(&session);
+        }
         if let Some(media) = &rt.media {
             media.remove(&session);
         }

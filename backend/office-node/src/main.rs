@@ -1,4 +1,5 @@
 mod agent_chat;
+mod agent_config;
 mod auth;
 mod bookings;
 mod contracts;
@@ -10,6 +11,7 @@ mod incidents;
 mod jobs;
 mod journals;
 mod leave;
+mod live_agents;
 mod media;
 mod meetings;
 mod payments;
@@ -40,7 +42,7 @@ use std::{
 
 type Db = Arc<Mutex<Connection>>;
 /// Database schema version written by this node; newer databases are refused.
-const SCHEMA_VERSION: i64 = 17;
+const SCHEMA_VERSION: i64 = 23;
 type ApiError = (StatusCode, &'static str);
 fn err(code: StatusCode, msg: &'static str) -> ApiError {
     (code, msg)
@@ -127,6 +129,8 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     leave::initialize(&tx)?;
     room_admin::initialize(&tx)?;
     auth::initialize(&tx)?;
+    live_agents::initialize(&tx)?;
+    agent_config::initialize(&tx)?;
     let seeded: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-v1')",
         [],
@@ -136,6 +140,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
         jobs::seed_roles(&tx, actors)?;
         customers::seed_roles(&tx, actors)?;
         seed_updates::apply(&tx)?;
+        agent_config::seed(&tx)?;
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         return Ok(());
@@ -166,6 +171,7 @@ fn initialize(db: &mut Connection, seed: &str) -> Result<(), Box<dyn std::error:
     jobs::seed_roles(&tx, actors)?;
     customers::seed_roles(&tx, actors)?;
     seed_updates::apply(&tx)?;
+    agent_config::seed(&tx)?;
     tx.execute("INSERT INTO metadata VALUES ('seed-v1','applied')", [])?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
@@ -454,6 +460,7 @@ async fn realtime_ticket(
     State(state): State<Db>,
     axum::Extension(config): axum::Extension<Option<RealtimeConfig>>,
     headers: HeaderMap,
+    _body: axum::body::Bytes,
 ) -> Result<Json<TicketResponse>, ApiError> {
     let config = config.ok_or(err(
         StatusCode::SERVICE_UNAVAILABLE,
@@ -897,7 +904,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let state = Arc::new(Mutex::new(db));
+    let live_agent_service = live_agents::Service::new(state.clone())?;
     let app = Router::new()
+        .route("/v1/agents/appearances", get(agent_config::appearances))
+        .route("/v1/agent-configuration", get(agent_config::list))
+        .route("/v1/agent-configuration/audit", get(agent_config::audit))
+        .route(
+            "/v1/agent-configuration/{agent}/reset",
+            axum::routing::post(agent_config::reset),
+        )
+        .route(
+            "/v1/agent-configuration/{agent}",
+            axum::routing::put(agent_config::update),
+        )
+        .route(
+            "/v1/live-agents/rooms/{room}",
+            get(live_agents::status).post(live_agents::control),
+        )
+        .route(
+            "/v1/live-agents/operations/{id}",
+            axum::routing::post(live_agents::decide),
+        )
+        .route("/v1/voice-worker/rooms", get(live_agents::plans))
+        .route(
+            "/v1/voice-worker/management",
+            axum::routing::post(live_agents::management),
+        )
+        .route(
+            "/v1/voice-worker/rooms/{room}/claim",
+            axum::routing::post(live_agents::claim),
+        )
+        .route(
+            "/v1/voice-worker/report",
+            axum::routing::post(live_agents::report),
+        )
+        .route(
+            "/v1/voice-worker/context",
+            axum::routing::post(live_agents::context),
+        )
+        .route(
+            "/v1/voice-worker/proposals",
+            axum::routing::post(live_agents::propose),
+        )
+        .layer(axum::Extension(live_agent_service.clone()))
         .route("/v1/agents/capabilities", get(agent_chat::capabilities))
         .route(
             "/v1/agents/{agent}/chat",
@@ -1170,9 +1219,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             let realtime_port = listener.local_addr()?.port();
             let mut service =
-                realtime::Realtime::new(key.clone(), Arc::new(DbEpoch(state.clone())));
+                realtime::Realtime::new(key.clone(), Arc::new(DbEpoch(state.clone())))
+                    .with_live_agents(live_agent_service.clone());
             if let Some(config) = media::MediaConfig::from_env()? {
-                service = service.with_media(media::MediaControl::new(config));
+                let media = media::MediaControl::new(config);
+                live_agent_service.attach_media(media.clone());
+                service = service.with_media(media);
             }
             tokio::spawn(async move {
                 if let Err(error) = axum::serve(listener, realtime::router(service)).await {
@@ -1626,6 +1678,7 @@ mod tests {
             State(db.clone()),
             axum::Extension(Some(config.clone())),
             headers(who),
+            axum::body::Bytes::new(),
         )
         .await
         .unwrap()
@@ -1634,6 +1687,44 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("authorization", format!("Ticket {ticket}").parse().unwrap());
         h
+    }
+    #[tokio::test]
+    async fn realtime_ticket_drains_chunked_client_body_before_responding() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let db = setup();
+        let config = RealtimeConfig {
+            key: realtime::TicketKey::random(),
+            url: "http://127.0.0.1:1".into(),
+        };
+        let app = Router::new()
+            .route("/v1/realtime/ticket", axum::routing::post(realtime_ticket))
+            .layer(axum::Extension(Some(config)))
+            .with_state(db);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream.write_all(b"POST /v1/realtime/ticket HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer an\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.unwrap();
+        let mut byte = [0; 1];
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), stream.read(&mut byte))
+                .await
+                .is_err()
+        );
+        stream.write_all(b"2\r\n{}\r\n0\r\n\r\n").await.unwrap();
+        let mut response = String::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_to_string(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"));
+        assert!(response.contains("realtime_url"));
+        server.abort();
     }
     #[tokio::test]
     async fn realtime_presence_uses_tickets_and_revokes_by_epoch() {

@@ -2,6 +2,21 @@
 use rusqlite::{params, Transaction};
 
 pub fn apply(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    let leadership_applied: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-leadership-admin-v1')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !leadership_applied {
+        for id in ["le-pha", "hua-hao"] {
+            tx.execute("INSERT OR IGNORE INTO actor_roles(actor,role) SELECT id,'org-admin' FROM actors WHERE id=?1 AND kind='human'", [id])?;
+        }
+        tx.execute(
+            "INSERT INTO metadata VALUES ('seed-leadership-admin-v1','applied')",
+            [],
+        )?;
+    }
+
     let applied: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM metadata WHERE key='seed-english-leadership-v1')",
         [],
@@ -72,6 +87,8 @@ mod tests {
             ("hua-hao", "cto"),
             ("le-triet", "org-admin"),
             ("le-triet", "operations"),
+            ("le-pha", "org-admin"),
+            ("hua-hao", "org-admin"),
         ] {
             let present: bool = db
                 .query_row(
@@ -95,11 +112,18 @@ mod tests {
             [],
         )
         .unwrap();
+        db.execute(
+            "DELETE FROM actor_roles WHERE actor='le-pha' AND role='org-admin'",
+            [],
+        )
+        .unwrap();
         {
             let tx = db.transaction().unwrap();
             apply(&tx).unwrap();
             tx.commit().unwrap();
         }
+        let leadership_restored: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM actor_roles WHERE actor='le-pha' AND role='org-admin')", [], |r| r.get(0)).unwrap();
+        assert!(!leadership_restored);
         let restored: bool=db.query_row("SELECT EXISTS(SELECT 1 FROM actor_roles WHERE actor='le-triet' AND role='org-admin')",[],|r|r.get(0)).unwrap();
         assert!(!restored);
     }

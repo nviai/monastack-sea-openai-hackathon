@@ -9,6 +9,7 @@
 #include <flutter_secure_storage_linux/flutter_secure_storage_linux_plugin.h>
 #include <flutter_webrtc/flutter_web_r_t_c_plugin.h>
 #include <livekit_client/live_kit_plugin.h>
+#include <rive_native/rive_native_plugin.h>
 
 void fl_register_plugins(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) flutter_secure_storage_linux_registrar =
@@ -20,4 +21,7 @@ void fl_register_plugins(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) livekit_client_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "LiveKitPlugin");
   live_kit_plugin_register_with_registrar(livekit_client_registrar);
+  g_autoptr(FlPluginRegistrar) rive_native_registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "RiveNativePlugin");
+  rive_native_plugin_register_with_registrar(rive_native_registrar);
 }

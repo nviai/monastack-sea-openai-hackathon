@@ -99,6 +99,9 @@ impl MediaConfig {
     /// media room. Both start off in the client; the server only bounds what
     /// may be published.
     pub fn join_token(&self, room: &str, identity: &str, actor: &str) -> String {
+        self.join_scoped_token(room, identity, actor, false)
+    }
+    fn join_scoped_token(&self, room: &str, identity: &str, actor: &str, agent: bool) -> String {
         let now = crate::now();
         self.jwt(json!({
             "iss": self.key,
@@ -112,7 +115,7 @@ impl MediaConfig {
                 "canSubscribe": true,
                 "canPublish": true,
                 "canPublishData": false,
-                "canPublishSources": ["microphone", "camera"],
+                "canPublishSources": if agent { vec!["microphone"] } else { vec!["microphone", "camera"] },
             },
         }))
     }
@@ -172,6 +175,10 @@ impl MediaControl {
             rooms: Default::default(),
             participants: Default::default(),
         })
+    }
+
+    pub fn client_url(&self) -> String {
+        self.config.client_url.clone()
     }
 
     pub fn ready(&self) -> bool {
@@ -251,6 +258,25 @@ impl MediaControl {
         session: &str,
         epoch: u64,
     ) -> Result<Issued, crate::ApiError> {
+        self.issue_scoped(room, actor, session, epoch, false).await
+    }
+    pub async fn issue_agent(
+        &self,
+        room: &str,
+        actor: &str,
+        session: &str,
+        epoch: u64,
+    ) -> Result<Issued, crate::ApiError> {
+        self.issue_scoped(room, actor, session, epoch, true).await
+    }
+    async fn issue_scoped(
+        &self,
+        room: &str,
+        actor: &str,
+        session: &str,
+        epoch: u64,
+        agent: bool,
+    ) -> Result<Issued, crate::ApiError> {
         let unavailable = || crate::err(StatusCode::SERVICE_UNAVAILABLE, "voice unavailable");
         if !self.ready() {
             return Err(unavailable());
@@ -276,7 +302,11 @@ impl MediaControl {
         }
         let name = media.name.clone().ok_or_else(unavailable)?;
         let identity = format!("{actor}.{}", &session[..12.min(session.len())]);
-        let token = self.config.join_token(&name, &identity, actor);
+        let token = if agent {
+            self.config.join_scoped_token(&name, &identity, actor, true)
+        } else {
+            self.config.join_token(&name, &identity, actor)
+        };
         self.participants
             .lock()
             .unwrap()

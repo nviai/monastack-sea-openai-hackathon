@@ -11,6 +11,7 @@ import 'package:monastack/features/office/voice/voice_controller.dart';
 class FakeConnection extends VoiceConnection {
   bool microphone = false;
   bool camera = false;
+  bool agentMuted = false;
   bool cameraFails = false;
   bool closed = false;
   Set<String> others = {};
@@ -31,6 +32,8 @@ class FakeConnection extends VoiceConnection {
     camera = enabled;
   }
 
+  @override
+  Future<void> setAgentMuted(bool muted) async => agentMuted = muted;
   @override
   Future<void> close() async => closed = true;
 }
@@ -77,12 +80,88 @@ void main() {
     },
   );
 
+  test('camera defaults on after join, microphone stays off, and manual camera off persists', () async {
+    final (server, _) = await fakeRealtime(() => [200]);
+    addTearDown(() => server.close(force: true));
+    final connection = FakeConnection();
+    final voice = VoiceController(
+      realtime: session(server),
+      session: () => 'human',
+      connector: (_, _) async => connection,
+    );
+    addTearDown(voice.dispose);
+    expect(connection.camera, false);
+    await voice.join('lobby');
+    expect(connection.camera, true);
+    expect(voice.value.camera, true);
+    expect(voice.value.microphone, false);
+    await voice.setCamera(false);
+    await voice.follow('dev');
+    expect(connection.camera, false);
+    expect(voice.value.camera, false);
+  });
+
+  test('agent auto-join receives only; explicit leave is respected until room changes', () async {
+    final (server, requests) = await fakeRealtime(() => [200]);
+    addTearDown(() => server.close(force: true));
+    final connections = <FakeConnection>[];
+    final voice = VoiceController(
+      cameraOnJoin: false,
+      realtime: session(server),
+      session: () => 'human',
+      connector: (_, _) async {
+        final c = FakeConnection();
+        connections.add(c);
+        return c;
+      },
+    );
+    addTearDown(voice.dispose);
+    await voice.follow('lobby');
+    await voice.autoJoinAgentRoom('lobby');
+    expect(voice.value.phase, VoicePhase.joined);
+    expect(connections.single.microphone, false);
+    expect(connections.single.camera, false);
+    await voice.autoJoinAgentRoom('lobby');
+    expect(requests.length, 1);
+    await voice.setAgentMuted(true);
+    expect(connections.single.agentMuted, true);
+    await voice.leave();
+    await voice.autoJoinAgentRoom('lobby');
+    expect(requests.length, 1);
+    await voice.follow('dev');
+    await voice.autoJoinAgentRoom('dev');
+    expect(requests.length, 2);
+    expect(connections.last.agentMuted, true);
+    expect(connections.last.microphone, false);
+    expect(connections.last.camera, false);
+  });
+
+  test(
+    'a delayed agent status for a previous room cannot join media',
+    () async {
+      final (server, requests) = await fakeRealtime(() => [200]);
+      addTearDown(() => server.close(force: true));
+      final voice = VoiceController(
+        cameraOnJoin: false,
+        realtime: session(server),
+        session: () => 'human',
+        connector: (_, _) async => FakeConnection(),
+      );
+      addTearDown(voice.dispose);
+      await voice.follow('dev');
+      await voice.autoJoinAgentRoom('lobby');
+      expect(requests, isEmpty);
+      expect(voice.value.microphone, false);
+    },
+  );
+
   for (final camera in [false, true]) {
     test('device button auto-connects from lobby: camera=$camera', () async {
       final (server, requests) = await fakeRealtime(() => [200]);
       addTearDown(() => server.close(force: true));
       final connection = FakeConnection();
       final voice = VoiceController(
+        cameraOnJoin: false,
         realtime: session(server),
         session: () => 'session-1',
         connector: (_, _) async => connection,
@@ -119,6 +198,7 @@ void main() {
       final ready = Completer<VoiceConnection>();
       final connection = FakeConnection();
       final voice = VoiceController(
+        cameraOnJoin: false,
         realtime: session(server),
         session: () => 'session-1',
         connector: (_, _) {
@@ -144,6 +224,7 @@ void main() {
     final connections = <FakeConnection>[];
     final tokens = <String>[];
     final voice = VoiceController(
+      cameraOnJoin: false,
       realtime: session(server),
       session: () => 'session-1',
       connector: (url, token) async {
@@ -180,6 +261,7 @@ void main() {
     final (server, requests) = await fakeRealtime(() => [statuses[index++]]);
     addTearDown(() => server.close(force: true));
     final voice = VoiceController(
+      cameraOnJoin: false,
       realtime: session(server),
       session: () => 's',
       connector: (url, token) async => FakeConnection(),
@@ -198,6 +280,7 @@ void main() {
     addTearDown(() => server.close(force: true));
     final connections = <FakeConnection>[];
     final voice = VoiceController(
+      cameraOnJoin: false,
       realtime: session(server),
       session: () => 's',
       connector: (url, token) async {
@@ -225,35 +308,47 @@ void main() {
     expect(setEquals(speaking.last, {'van'}), isTrue);
   });
 
-  test('camera starts off on every join and failures fall back', () async {
-    final (server, _) = await fakeRealtime(() => [200]);
-    addTearDown(() => server.close(force: true));
-    final connections = <FakeConnection>[];
-    final voice = VoiceController(
-      realtime: session(server),
-      session: () => 's',
-      connector: (url, token) async {
-        final c = FakeConnection();
-        connections.add(c);
-        return c;
-      },
-    );
-    addTearDown(voice.dispose);
-    await voice.setCamera(true);
-    expect(voice.value.camera, isFalse, reason: 'no camera before joining');
-    await voice.join('lobby');
-    expect(voice.value.camera, isFalse, reason: 'camera off on join');
-    expect(connections.single.camera, isFalse);
-    await voice.setCamera(true);
-    expect(voice.value.camera, isTrue);
-    expect(connections.single.camera, isTrue);
-    await voice.follow('dev');
-    expect(voice.value.camera, isFalse, reason: 'camera off in a new room');
-    expect(connections.last.camera, isFalse);
-    connections.last.cameraFails = true;
-    await voice.setCamera(true);
-    expect(voice.value.camera, isFalse);
-    expect(voice.value.message, contains('Camera unavailable'));
-    expect(voice.value.phase, VoicePhase.joined, reason: 'voice continues');
-  });
+  test(
+    'camera preference follows room changes and failures leave voice connected',
+    () async {
+      final (server, _) = await fakeRealtime(() => [200]);
+      addTearDown(() => server.close(force: true));
+      final connections = <FakeConnection>[];
+      final voice = VoiceController(
+        cameraOnJoin: false,
+        realtime: session(server),
+        session: () => 's',
+        connector: (url, token) async {
+          final c = FakeConnection();
+          connections.add(c);
+          return c;
+        },
+      );
+      addTearDown(voice.dispose);
+      await voice.setCamera(true);
+      expect(voice.value.camera, isFalse, reason: 'no camera before joining');
+      await voice.join('lobby');
+      expect(
+        voice.value.camera,
+        isTrue,
+        reason: 'explicit camera preference is applied on join',
+      );
+      expect(connections.single.camera, isTrue);
+      await voice.setCamera(true);
+      expect(voice.value.camera, isTrue);
+      expect(connections.single.camera, isTrue);
+      await voice.follow('dev');
+      expect(
+        voice.value.camera,
+        isTrue,
+        reason: 'camera follows its explicit preference',
+      );
+      expect(connections.last.camera, isTrue);
+      connections.last.cameraFails = true;
+      await voice.setCamera(true);
+      expect(voice.value.camera, isFalse);
+      expect(voice.value.message, contains('Camera unavailable'));
+      expect(voice.value.phase, VoicePhase.joined, reason: 'voice continues');
+    },
+  );
 }

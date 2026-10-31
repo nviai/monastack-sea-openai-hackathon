@@ -41,3 +41,5 @@ Existing environment variables take precedence over .env values. Existing databa
 Default host root in this workspace: `/Users/phale/hackathon/monastack-sea-openai-hackathon/runtime`.
 
 Office-node runs on the host in the provided setup. LiveKit binds just `runtime/media/livekit.yaml` into its container; the process worker binds only its disposable child directory. Removing Docker containers/volumes leaves these host files intact. Desktop Keychain credentials and the app's sandbox outbox remain managed by macOS; they are not server Docker mounts.
+
+Room voice agents also use `live-agent/.venv/`, private `live-agent/worker.token`, `pids/voice-worker.pid` and `logs/voice-worker.log`. Session usage, room configuration and confirmed operations live in the server database. See [voice agent operations](../docs/live-agent-voice.md).

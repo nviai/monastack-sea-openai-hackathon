@@ -102,31 +102,31 @@
     },
     {
       "id": "dev-agent",
-      "name": "Dev Agent",
+      "name": "Atlas",
       "role": "agent",
       "kind": "agent"
     },
     {
       "id": "qa-agent",
-      "name": "QA Agent",
+      "name": "Iris",
       "role": "agent",
       "kind": "agent"
     },
     {
       "id": "pm-agent",
-      "name": "PM Agent",
+      "name": "Nova",
       "role": "agent",
       "kind": "agent"
     },
     {
       "id": "sales-agent",
-      "name": "Sales Agent",
+      "name": "Leo",
       "role": "agent",
       "kind": "agent"
     },
     {
       "id": "cskh-agent",
-      "name": "Customer Support Agent",
+      "name": "Luna",
       "role": "agent",
       "kind": "agent"
     }

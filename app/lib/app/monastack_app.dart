@@ -56,12 +56,18 @@ class _OfficeState extends ConsumerState<Office> {
   /// is not published for an unknown position.
   final position = ValueNotifier<List<int>>(const [-1, -1]);
   final remote = ValueNotifier<List<Map<String, dynamic>>>([]);
+  final agentPresentation = ValueNotifier<Map<String, dynamic>>({});
+  final onlineAgents = ValueNotifier<Set<String>>(const {});
+  final audioLevels = ValueNotifier<Map<String, double>>(const {});
   final speaking = ValueNotifier<Set<String>>(const {});
   final faces = ValueNotifier<Map<String, Widget>>(const {});
   @override
   void dispose() {
     position.dispose();
     remote.dispose();
+    agentPresentation.dispose();
+    onlineAgents.dispose();
+    audioLevels.dispose();
     speaking.dispose();
     faces.dispose();
     super.dispose();
@@ -139,6 +145,9 @@ class _OfficeState extends ConsumerState<Office> {
               actors: actors,
               rooms: rooms,
               speaking: speaking,
+              audioLevels: audioLevels,
+              onlineAgents: onlineAgents,
+              agentPresentation: agentPresentation,
               faces: faces,
               company: (data['workspace'] as Map?)?['name'] as String? ?? '',
               onWorkspaceName: (name) {
@@ -415,6 +424,9 @@ class _OfficeState extends ConsumerState<Office> {
                                     findPath(start, goal),
                                 locateRoom: locateRoom,
                                 speaking: speaking,
+                                audioLevels: audioLevels,
+                                onlineAgents: onlineAgents,
+                                agentPresentation: agentPresentation,
                                 faces: faces,
                                 accessibleRooms: accessibleRooms(rooms),
                                 onSelectActor: (id) {

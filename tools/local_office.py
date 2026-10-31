@@ -67,7 +67,8 @@ def environment(name):
         'MONASTACK_NODE_PORT':str(port), 'MONASTACK_REALTIME_PORT':str(realtime),
         'MONASTACK_REALTIME':'embedded' if name == 'server' else 'off', 'MONASTACK_SEED_COMPANY':seed,
         'MONASTACK_WORKSPACE_MODE':'identity' if name == 'server' else 'shared',
-        'MONASTACK_BIND_HOST':'0.0.0.0'}
+        'MONASTACK_BIND_HOST':'0.0.0.0',
+        **({'LIVE_AGENTS_ENABLED':'0'} if name != 'server' else {})}
     if name == 'server':
         values.update({'MONASTACK_MEDIA_URL':'ws://127.0.0.1:7880',
             'MONASTACK_MEDIA_PUBLIC_URL':f'ws://{SERVER_HOST}:7880',
@@ -84,7 +85,7 @@ def running(name):
         return None
     pid = int(file.read_text().strip())
     command = subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True).stdout
-    expected = str(APP if name in ('app', 'lan-client') else NODE)
+    expected = str(ROOT/'backend/live-agent/worker.py') if name == 'voice-worker' else str(APP if name in ('app', 'lan-client') else NODE)
     return pid if expected in command else None
 
 def spawn(name, command, env):
@@ -95,7 +96,7 @@ def spawn(name, command, env):
         process = subprocess.Popen(command, cwd=ROOT, env=env,
             stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
     pid_file(name).write_text(str(process.pid)+'\n')
-    if name != 'app':
+    if name in SPECS:
         port = SPECS[name][0]
         for _ in range(400):
             if process.poll() is not None:
@@ -146,6 +147,17 @@ def start(with_app):
     elif role[0] != 'member':
         raise RuntimeError('Client database is already a master; preserved without modification.')
     spawn('client',[str(NODE)],environment('client'))
+    settings = dict(line.split('=', 1) for line in (RUNTIME/'.env').read_text().splitlines()
+                    if '=' in line and not line.lstrip().startswith('#'))
+    enabled = os.environ.get('LIVE_AGENTS_ENABLED', settings.get('LIVE_AGENTS_ENABLED', '0')).strip() == '1'
+    if enabled:
+        worker_python = RUNTIME/'live-agent/.venv/bin/python'
+        if not worker_python.exists():
+            raise RuntimeError('Run sh backend/live-agent/setup.sh first.')
+        spawn('voice-worker', [str(worker_python), str(ROOT/'backend/live-agent/worker.py')], environment('server'))
+        time.sleep(.3)
+        if not running('voice-worker'):
+            raise RuntimeError('Voice worker exited; inspect runtime/logs/voice-worker.log')
     if with_app:
         if not APP.is_file():
             raise RuntimeError('Build app with flutter build macos --debug first; both nodes are running.')
@@ -162,11 +174,12 @@ def status():
     for name, ports in MEDIA.items():
         check = subprocess.run(['docker','inspect','--format','{{.State.Running}}',f'monastack-livekit-{name}'],capture_output=True,text=True)
         print(f'LiveKit {name}: {"running" if check.returncode == 0 and check.stdout.strip() == "true" else "stopped"}; signaling 0.0.0.0:{ports[0]}, RTC TCP {ports[1]}, UDP {ports[2]}')
+    print(f'Live agent worker: {running("voice-worker") or "stopped"}')
     if running('lan-client'): print(f'LAN client: running, PID {running("lan-client")}')
     print(f'app: {"running, PID "+str(running("app")) if running("app") else "stopped"}; connects to 127.0.0.1:47840')
 
 def stop():
-    for name in ['lan-client','app','client','server']:
+    for name in ['lan-client','app','voice-worker','client','server']:
         pid = running(name)
         if pid:
             os.kill(pid,signal.SIGTERM)

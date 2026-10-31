@@ -1,3 +1,5 @@
+import 'package:monastack/features/agents/agent_configuration.dart';
+import 'package:monastack/features/office/voice/live_agent_panel.dart';
 import 'package:monastack/features/inference/local_inference.dart';
 import 'package:monastack/features/sync/outbox_review.dart';
 import 'package:monastack/features/sync/task_outbox.dart';
@@ -50,6 +52,9 @@ class Collaboration extends StatefulWidget {
     required this.onIdentity,
     required this.onPermissions,
     this.speaking,
+    this.audioLevels,
+    this.onlineAgents,
+    this.agentPresentation,
     this.faces,
     this.company = '',
     this.onWorkspaceName,
@@ -64,6 +69,9 @@ class Collaboration extends StatefulWidget {
 
   /// Receives the actors currently speaking in voice, for the office view.
   final ValueNotifier<Set<String>>? speaking;
+  final ValueNotifier<Map<String, double>>? audioLevels;
+  final ValueNotifier<Set<String>>? onlineAgents;
+  final ValueNotifier<Map<String, dynamic>>? agentPresentation;
 
   /// Receives live camera views by actor, which replace avatar faces.
   final ValueNotifier<Map<String, Widget>>? faces;
@@ -115,6 +123,7 @@ class CollaborationState extends State<Collaboration> {
           ),
         ],
       ),
+      'agent-configuration' => AgentConfiguration(request: request),
       'agents' => JobQueue(request: request, actors: widget.actors),
       'room-admin' => RoomMembership(
         request: request,
@@ -199,6 +208,9 @@ class CollaborationState extends State<Collaboration> {
   String? publishedRoom;
   DateTime publishedAt = DateTime.fromMillisecondsSinceEpoch(0);
   VoiceController? voice;
+  Map<String, dynamic>? liveAgent;
+  DateTime liveAgentAt = DateTime(2000);
+  bool liveAgentBusy = false;
 
   /// Consecutive presence failures; the last snapshot is kept for a few
   /// seconds so one dropped request does not make everyone vanish.
@@ -314,6 +326,7 @@ class CollaborationState extends State<Collaboration> {
         status = 'Connecting';
       });
       widget.onIdentity(identity);
+      unawaited(refreshAgentAppearances());
       final who = identity!;
       final authority = me['authority_id'] as String?;
       if (authority == null ||
@@ -395,6 +408,7 @@ class CollaborationState extends State<Collaboration> {
       voice?.dispose();
       voice = VoiceController(realtime: realtime!, session: () => session)
         ..addListener(_voiceChanged);
+      await voice!.follow(widget.room);
       await refresh();
       await refreshPresence();
     } catch (_) {
@@ -491,6 +505,7 @@ class CollaborationState extends State<Collaboration> {
   /// heartbeat) and reads visible presence. Runs every second and right after
   /// movement; a failure only affects presence, never chat.
   Future<void> refreshPresence() async {
+    unawaited(refreshAgentAppearances());
     final presence = realtime;
     if (identity == null || presence == null || presenceBusy || disconnecting) {
       return;
@@ -519,6 +534,7 @@ class CollaborationState extends State<Collaboration> {
         publishedRoom = requestedRoom;
         publishedAt = now;
       }
+      unawaited(refreshLiveAgent());
       final people = await presence.request('GET', '/v1/presence') as List;
       presenceFailures = 0;
       if (mounted && identity == requestedIdentity && !disconnecting) {
@@ -614,9 +630,129 @@ class CollaborationState extends State<Collaboration> {
     }
   }
 
+  Map<String, dynamic> agentAppearances = {};
+  bool appearancesBusy = false;
+  DateTime appearancesAt = DateTime(2000);
+
+  void resetAgentSpeech() {
+    widget.agentPresentation?.value = {
+      for (final entry in agentAppearances.entries)
+        entry.key: {...entry.value as Map, 'text': '', 'at': 0},
+    };
+  }
+
+  Future<void> refreshAgentAppearances() async {
+    if (identity == null ||
+        disconnecting ||
+        appearancesBusy ||
+        DateTime.now().difference(appearancesAt).inSeconds < 5) {
+      return;
+    }
+    appearancesBusy = true;
+    final who = identity;
+    final capturedSession = session;
+    try {
+      final result = await request('GET', '/v1/agents/appearances') as List;
+      if (!mounted ||
+          identity != who ||
+          session != capturedSession ||
+          disconnecting) {
+        return;
+      }
+      agentAppearances = {
+        for (final agent in result)
+          agent['id'] as String: {
+            'name': agent['name'],
+            'gender': agent['gender'],
+            'voice': agent['voice'],
+          },
+      };
+      final previous = widget.agentPresentation?.value ?? {};
+      widget.agentPresentation?.value = {
+        for (final entry in agentAppearances.entries)
+          entry.key: {
+            ...entry.value as Map,
+            'text': previous[entry.key]?['text'] ?? '',
+            'at': previous[entry.key]?['at'] ?? 0,
+          },
+      };
+      appearancesAt = DateTime.now();
+    } catch (_) {
+      // A transient metadata failure retains the last known Office appearance.
+    } finally {
+      appearancesBusy = false;
+    }
+  }
+
+  Future<void> refreshLiveAgent() async {
+    if (liveAgentBusy ||
+        identity == null ||
+        disconnecting ||
+        DateTime.now().difference(liveAgentAt).inMilliseconds < 1500) {
+      return;
+    }
+    liveAgentBusy = true;
+    liveAgentAt = DateTime.now();
+    final room = widget.room;
+    final who = identity;
+    try {
+      final result = await request(
+        'GET',
+        '/v1/live-agents/rooms/$room',
+      ) as Map<String, dynamic>;
+      if (!mounted || who != identity || room != widget.room || disconnecting) {
+        return;
+      }
+      setState(() => liveAgent = result);
+      final selected = result['selected'] as String;
+      final captions = (result['captions'] as List? ?? [])
+          .where((c) => c['speaker'] == selected)
+          .toList();
+      final last = captions.isEmpty ? null : captions.last;
+      final appearances =
+          result['appearances'] as List? ??
+          [
+            {
+              'id': selected,
+              'name': result['display_name'] ?? selected,
+              'gender': result['gender'] ?? 'unspecified',
+              'voice': result['voice'],
+            },
+          ];
+      widget.agentPresentation?.value = {
+        ...?widget.agentPresentation?.value,
+        for (final appearance in appearances)
+          appearance['id'] as String: {
+            'name': appearance['name'],
+            'gender': appearance['gender'] ?? 'unspecified',
+            'voice': appearance['voice'],
+            'text': appearance['id'] == selected ? (last?['text'] ?? '') : '',
+            'at': appearance['id'] == selected ? (last?['at'] ?? 0) : 0,
+          },
+      };
+      final active = !{
+        'disabled',
+        'paused',
+        'offline',
+        'error',
+      }.contains(result['state']);
+      widget.onlineAgents?.value = active ? {result['selected'] as String} : {};
+      await voice?.autoJoinAgentRoom(room);
+    } catch (_) {
+      if (mounted && room == widget.room) {
+        setState(() => liveAgent = null);
+        widget.onlineAgents?.value = {};
+        resetAgentSpeech();
+      }
+    } finally {
+      liveAgentBusy = false;
+    }
+  }
+
   void _voiceChanged() {
     final state = voice?.value ?? const VoiceState();
     widget.speaking?.value = state.speaking;
+    widget.audioLevels?.value = state.audioLevels;
     final faces = widget.faces;
     if (faces != null) faces.value = cameraFaces(state, faces.value);
   }
@@ -624,6 +760,12 @@ class CollaborationState extends State<Collaboration> {
   Future<void> disconnect() async {
     if (disconnecting) return;
     disconnecting = true;
+    liveAgent = null;
+    widget.audioLevels?.value = {};
+    widget.onlineAgents?.value = {};
+    widget.agentPresentation?.value = {};
+    agentAppearances = {};
+    appearancesAt = DateTime(2000);
     timer?.cancel();
     presenceTimer?.cancel();
     movementTimer?.cancel();
@@ -728,6 +870,10 @@ class CollaborationState extends State<Collaboration> {
     }
     if (oldWidget.room != widget.room && identity != null) {
       messages = [];
+      liveAgent = null;
+      liveAgentAt = DateTime(2000);
+      widget.onlineAgents?.value = {};
+      resetAgentSpeech();
       refresh();
       refreshPresence();
       voice?.follow(widget.room);
@@ -858,6 +1004,16 @@ class CollaborationState extends State<Collaboration> {
             names: {
               for (final a in widget.actors)
                 a['id'] as String: a['name'] as String,
+            },
+          ),
+        if (liveAgent != null && voice != null)
+          LiveAgentPanel(
+            data: liveAgent!,
+            controller: voice!,
+            request: request,
+            onChanged: () {
+              liveAgentAt = DateTime(2000);
+              return refreshLiveAgent();
             },
           ),
         Text(

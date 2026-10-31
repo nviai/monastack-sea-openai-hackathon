@@ -63,7 +63,7 @@ Rect avatarBounds(Iso iso, double x, double y) {
 }
 
 /// Paints a low-poly figure standing on world point `(x, y)`.
-/// Offline agents are drawn translucent and grey with an antenna so they
+/// Offline agents use grey colors and an antenna so they
 /// are never mistaken for an online person. With `face: false` the head is
 /// left out because a live camera bubble is drawn in its place.
 void paintAvatar(
@@ -79,7 +79,7 @@ void paintAvatar(
   bool face = true,
 }) {
   final feet = iso.project(x, y);
-  final opacity = offlineAgent ? .55 : 1.0;
+  const opacity = 1.0;
   Color tone(Color c) => c.withValues(alpha: c.a * opacity);
   if (self) {
     canvas.drawOval(

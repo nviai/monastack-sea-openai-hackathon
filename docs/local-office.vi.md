@@ -1,5 +1,7 @@
 # Chạy server + node client + app trên cùng máy
 
+GPT-Live voice agent theo phòng: cài worker bằng `sh backend/live-agent/setup.sh`, bật `LIVE_AGENTS_ENABLED=1` trong `runtime/.env`; lệnh local office sẽ chạy worker cùng server. Xem [hướng dẫn vận hành](live-agent-voice.md).
+
 Cấu hình đã được thiết lập tại workspace hiện tại. Các tiến trình chạy nền sau khi lệnh kết thúc, không tự chạy lại sau khi reboot.
 
 | Thành phần | Bind | App/tiến trình local kết nối qua |

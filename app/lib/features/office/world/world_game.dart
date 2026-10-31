@@ -56,9 +56,11 @@ class WorldGame extends FlameGame {
 
   /// Actors currently speaking in voice.
   Set<String> speaking = const {};
+  Set<String> onlineAgents = const {};
 
   /// Actors whose live camera replaces their drawn face.
   Set<String> faces = const {};
+  Set<String> riveFaces = const {};
 
   /// Camera faces placed by the last render, for the widget overlay.
   List<FaceSlot> get faceSlots => List.unmodifiable(_faceSlots.values);
@@ -293,7 +295,7 @@ class WorldGame extends FlameGame {
     for (final figure in _figures) {
       final walking =
           figure.kind == _Kind.self && _from != null && !reducedMotion;
-      if (figure.kind != _Kind.agent && speaking.contains(figure.actor)) {
+      if (speaking.contains(figure.actor)) {
         final feet = iso.project(figure.x, figure.y);
         final pulse = reducedMotion ? 0.0 : (math.sin(_clock * 8) + 1) * 2;
         canvas.drawOval(
@@ -317,9 +319,10 @@ class WorldGame extends FlameGame {
         figure.y,
         AvatarStyle.of(figure.actor),
         self: figure.kind == _Kind.self,
-        offlineAgent: figure.kind == _Kind.agent,
+        offlineAgent:
+            figure.kind == _Kind.agent && !onlineAgents.contains(figure.actor),
         bob: bob,
-        face: !camera,
+        face: !camera && !riveFaces.contains(figure.actor),
       );
       final bounds = avatarBounds(iso, figure.x, figure.y);
       final head = Rect.fromCircle(
@@ -328,7 +331,9 @@ class WorldGame extends FlameGame {
       );
       var behind = false;
       for (final occluder in occluders) {
-        if (occluder.depth > figure.depth && occluder.bounds.overlaps(bounds)) {
+        if (figure.kind != _Kind.agent &&
+            occluder.depth > figure.depth &&
+            occluder.bounds.overlaps(bounds)) {
           occluder.paint(canvas);
           behind = behind || occluder.bounds.overlaps(head);
         }
@@ -346,6 +351,17 @@ class WorldGame extends FlameGame {
           diameter,
           behind: behind,
         );
+      }
+      if (riveFaces.contains(figure.actor)) {
+        final rect = agentFaceRect(figure.actor);
+        if (rect != null) {
+          _faceSlots[figure.actor] = FaceSlot(
+            figure.actor,
+            rect.center,
+            rect.width,
+            behind: false,
+          );
+        }
       }
     }
     // A faint outline keeps the local avatar findable behind tall walls.
@@ -397,18 +413,13 @@ class WorldGame extends FlameGame {
         case _Kind.remote:
           paintLabel(canvas, anchor, name, dot: const Color(0xff2f9e6f));
         case _Kind.agent:
-          // Offline profiles stay unlabelled until hovered to keep rooms
-          // readable; a grey status dot marks them as not running.
-          final status = toScreen(iso.project(figure.x, figure.y, 47));
-          canvas.drawCircle(
-            status,
-            4,
-            Paint()..color = const Color(0xffffffff),
-          );
-          canvas.drawCircle(
-            status,
-            2.8,
-            Paint()..color = const Color(0xff9aa6ad),
+          paintLabel(
+            canvas,
+            anchor,
+            name,
+            dot: onlineAgents.contains(figure.actor)
+                ? const Color(0xff2f9e6f)
+                : const Color(0xff9aa6ad),
           );
       }
     }
@@ -421,11 +432,43 @@ class WorldGame extends FlameGame {
     }
   }
 
+  Rect? agentFaceRect(String actor) {
+    for (final agent in agentSeats) {
+      if (agent.actor == actor) {
+        final diameter = (34 * scale).clamp(30.0, 100.0);
+        final head = toScreen(
+          iso.project(
+            agent.seat.x.toDouble(),
+            agent.seat.y.toDouble(),
+            avatarHeadHeight,
+          ),
+        );
+        return Rect.fromCenter(center: head, width: diameter, height: diameter);
+      }
+    }
+    return null;
+  }
+
+  Offset? agentHeadPosition(String actor) {
+    for (final agent in agentSeats) {
+      if (agent.actor == actor) {
+        return toScreen(
+          iso.project(
+            agent.seat.x.toDouble(),
+            agent.seat.y.toDouble(),
+            avatarLabelHeight,
+          ),
+        );
+      }
+    }
+    return null;
+  }
+
   String? _tooltip(Offset point, OfficeScene scene) {
     final actor = actorAt(point);
     if (actor != null) {
       final agent = agentSeats.any((a) => a.actor == actor);
-      return '${names[actor] ?? actor}${agent ? ' · offline agent profile' : ''} · click for profile';
+      return '${names[actor] ?? actor}${agent ? (onlineAgents.contains(actor) ? ' · live agent' : ' · offline agent profile') : ''} · click for profile';
     }
     final cell = cellAt(point);
     for (final desk in scene.map.desks) {

@@ -28,8 +28,8 @@ void main() {
       expect(condition(), isTrue, reason: reason);
     }
 
-    final authClientA = HttpClient()..idleTimeout = Duration.zero;
-    final authClientB = HttpClient()..idleTimeout = Duration.zero;
+    final authClientA = HttpClient()..idleTimeout = const Duration(seconds: 1);
+    final authClientB = HttpClient()..idleTimeout = const Duration(seconds: 1);
     final apiA = AuthApi(port: 47830, client: authClientA),
         apiB = AuthApi(port: 47840, client: authClientB);
     final a = await apiA.login('pha.le', 'NviaiSeaxOpenAIHackathon');
@@ -54,8 +54,16 @@ void main() {
       ),
     );
     final sa = const Uuid().v4(), sb = const Uuid().v4();
-    final va = VoiceController(realtime: rtA, session: () => sa),
-        vb = VoiceController(realtime: rtB, session: () => sb);
+    final va = VoiceController(
+          cameraOnJoin: false,
+          realtime: rtA,
+          session: () => sa,
+        ),
+        vb = VoiceController(
+          cameraOnJoin: false,
+          realtime: rtB,
+          session: () => sb,
+        );
     Timer? heartbeat;
     var seq = 0;
     Future<void> publish() async {
@@ -113,6 +121,29 @@ void main() {
       );
       expect(va.value.microphone, isFalse);
       expect(vb.value.camera, isFalse);
+      if (Platform.environment['MONASTACK_TEST_LIVE_AGENT'] == '1') {
+        await until(
+          () =>
+              va.value.hearing.contains('mona') &&
+              vb.value.hearing.contains('mona'),
+          'both Flutter clients subscribe to one live Mona',
+        );
+        await va.setAgentMuted(true);
+        await until(
+          () => !va.value.hearing.contains('mona'),
+          'local agent mute disables only this subscription',
+        );
+        expect(vb.value.hearing.contains('mona'), isTrue);
+        expect(va.value.participants.contains('hua-hao'), isTrue);
+        await va.setAgentMuted(false);
+        await until(
+          () => va.value.hearing.contains('mona'),
+          'local agent unmute restores subscription',
+        );
+        debugPrint(
+          'live agent: shared Mona received by both Flutter clients; local mute/unmute preserves the other peer; capture stays off',
+        );
+      }
       final pa = await rtA.request('GET', '/v1/presence') as List;
       final pb = await rtB.request('GET', '/v1/presence') as List;
       expect(pa.any((p) => p['actor'] == 'hua-hao'), isTrue);

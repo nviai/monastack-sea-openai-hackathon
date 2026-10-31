@@ -18,8 +18,8 @@ NviaiSeaxOpenAIHackathon
 | `mai` | Le Thi Mai | Sales |
 | `duc` | Hoang Minh Duc | Customer Support |
 | `van` | Ngo Thu Van | Accountant |
-| `pha.le` | Pha Le | CEO |
-| `hao.hua` | Hao Hua | CTO |
+| `pha.le` | Pha Le | CEO + Company Administrator |
+| `hao.hua` | Hao Hua | CTO + Company Administrator |
 | `triet.le` | Triet Le | Company Administrator |
 
 Each password is stored as a separate salted Argon2id hash in `accounts.password_hash`. Agents have no password accounts. Existing company identity, account credentials, usernames and disabled states are preserved. Existing seeded usernames `le-pha`, `hua-hao` (or `hao-hua`) and `le-triet` are migrated to `pha.le`, `hao.hua` and `triet.le` at master startup, preserving passwords and actor IDs.
@@ -51,3 +51,5 @@ docker inspect monastack-livekit-dev --format '{{json .Mounts}}'
 ```
 
 Shared office routing is now the member default: presence and LiveKit are provided by the master. See [ADR 0009](adr/0009-shared-office.md).
+
+The one-time `seed-leadership-admin-v1` migration grants `org-admin` to CEO `pha.le` and CTO `hao.hua`, retaining their `ceo`/`cto` roles. Subsequent restarts preserve explicit permission revocations. All six agents receive persistent [configuration presets](agent-configuration.md).

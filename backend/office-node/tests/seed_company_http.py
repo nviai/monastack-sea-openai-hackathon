@@ -62,9 +62,20 @@ with tempfile.TemporaryDirectory(prefix='monastack-seed-') as directory:
             status, session = login(person.get('username', person['id']))
             assert status == 200, (person['id'], status)
             assert session['actor'] == person['id']
-            assert session['admin'] == (person['role'] == 'org-admin')
+            assert session['admin'] == (person['role'] in ('org-admin', 'ceo', 'cto'))
             assert call('me', token=session['access_token'])[0] == 200
             sessions[person['id']] = session
+        assert call('agents/appearances')[0] == 401
+        status, appearances = call('agents/appearances', token=sessions['hung']['access_token'])
+        assert status == 200 and len(appearances) == 6
+        assert {a['id'] for a in appearances} == {a['id'] for a in seed['actors'] if a['kind'] == 'agent'}
+        assert all(set(a) == {'id', 'name', 'gender', 'voice'} for a in appearances)
+        assert all(a['gender'] in ('female', 'male') for a in appearances)
+        for actor in ['le-pha', 'hua-hao']:
+            status, settings = call('agent-configuration', token=sessions[actor]['access_token'])
+            assert status == 200 and settings['can_manage']
+            assert len(settings['agents']) == 6
+            assert all(a['version'] >= 1 and a['config']['gender'] in ('male', 'female') for a in settings['agents'])
         with sqlite3.connect(db) as connection:
             hashes = dict(connection.execute('SELECT actor,password_hash FROM accounts'))
         assert len(hashes) == 11 and len(set(hashes.values())) == 11
