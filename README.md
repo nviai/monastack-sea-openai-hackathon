@@ -25,9 +25,7 @@ The workspace contains a macOS app (Flutter/Flame with a Rust core over `flutter
 
 Office members can chat directly with the six agents using the OpenAI Responses API. Fill `OPENAI_API_KEY` in the `runtime/.env`, restart the office node, and choose **Chat with agent** from an agent profile. See [setup and behavior](docs/openai-agents.md).
 
-## Chạy project
-
-Xem [hướng dẫn tiếng Việt: node + app client và node server](docs/run-project.vi.md), gồm chế độ một máy, member/master và nhiều client dùng chung office node qua SSH.
+## Running the project
 
 Default company/accounts: NVIAI is set up automatically on normal node startup. Sign in with a [seeded username](docs/seeded-accounts.md) and `NviaiSeaxOpenAIHackathon`; no password change is required. Use `MONASTACK_SEED_COMPANY=0` for manual setup or a fresh member node.
 
@@ -38,3 +36,7 @@ Same-machine server + member + macOS app: `python3 tools/local_office.py start`.
 Members now share the master's office records, presence and single LiveKit by default (`MONASTACK_WORKSPACE_MODE=shared`). See [shared office design](docs/adr/0009-shared-office.md).
 
 LAN client: `./tools/start-client.sh` connects to `192.168.224.217:47830`. See [client startup instructions](docs/start-client-lan.vi.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
