@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/whiteboard.dart';
+import 'package:monastack/features/knowledge/whiteboard.dart';
 
 void main() {
   testWidgets('shared note supports accessible edit and deletion', (

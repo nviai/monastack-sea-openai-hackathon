@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:monastack/main.dart';
-import 'package:monastack/office_world.dart';
+import 'package:monastack/app/monastack_app.dart';
+import 'package:monastack/features/office/world/office_world.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

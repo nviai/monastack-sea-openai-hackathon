@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:monastack/leave_calendar.dart';
+import 'package:monastack/features/hr/leave_calendar.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

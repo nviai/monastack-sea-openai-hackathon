@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/job_queue.dart';
+import 'package:monastack/features/agents/job_queue.dart';
 
 void main() {
   testWidgets('host reports are explicitly unverified', (tester) async {

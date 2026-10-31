@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/task_outbox.dart';
+import 'package:monastack/features/sync/task_outbox.dart';
+import 'package:monastack/shared/node_request.dart';
 
 void main() {
   test('queued chat survives restart, deduplicates delivery and rejects revoked scope', () async {

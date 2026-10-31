@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/customer_directory.dart';
-import 'package:monastack/sales_pipeline.dart';
-import 'package:monastack/support_cases.dart';
+import 'package:monastack/features/customers/customer_directory.dart';
+import 'package:monastack/features/customers/sales_pipeline.dart';
+import 'package:monastack/features/customers/support_cases.dart';
 
 void main() {
   testWidgets('sales write controls disappear while read access remains', (

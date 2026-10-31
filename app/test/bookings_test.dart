@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/bookings.dart';
+import 'package:monastack/features/customers/bookings.dart';
 
 void main() {
-  testWidgets('support can read bookings without sales controls', (tester) async {
+  testWidgets('support can read bookings without sales controls', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -12,9 +14,25 @@ void main() {
     Future<dynamic> request(String method, String path, [Object? body]) async {
       if (path == '/v1/bookings/capabilities') return {'can_manage': false};
       if (path == '/v1/customers') return <dynamic>[];
-      return [{'id':'0123456789abcdef','customer':'abcdef0123456789','customer_name':'Example','title':'Read-only booking','starts':1800000000,'ends':1800003600,'state':'scheduled','version':1}];
+      return [
+        {
+          'id': '0123456789abcdef',
+          'customer': 'abcdef0123456789',
+          'customer_name': 'Example',
+          'title': 'Read-only booking',
+          'starts': 1800000000,
+          'ends': 1800003600,
+          'state': 'scheduled',
+          'version': 1,
+        },
+      ];
     }
-    await tester.pumpWidget(ProviderScope(child: MaterialApp(home: Bookings(request: request))));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(home: Bookings(request: request)),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Read-only booking'), findsOneWidget);
     expect(find.text('Book customer'), findsNothing);

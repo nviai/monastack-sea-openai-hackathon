@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:monastack/task_outbox.dart';
-import 'package:monastack/main.dart';
+import 'package:monastack/features/sync/task_outbox.dart';
+import 'package:monastack/app/monastack_app.dart';
 import 'package:uuid/uuid.dart';
+import 'package:monastack/shared/node_request.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

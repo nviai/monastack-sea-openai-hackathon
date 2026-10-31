@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/office_world.dart';
+import 'package:monastack/features/office/world/office_world.dart';
 
 void main() {
   testWidgets(

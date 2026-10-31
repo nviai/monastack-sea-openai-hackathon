@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/document_library.dart';
+import 'package:monastack/features/knowledge/document_library.dart';
 
 void main() {
   testWidgets('creates and opens a scoped document', (tester) async {

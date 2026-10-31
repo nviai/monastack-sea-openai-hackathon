@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/incidents.dart';
+import 'package:monastack/features/operations/incidents.dart';
 
 void main() {
   testWidgets('discussion retries the same operation and clears revoked data', (

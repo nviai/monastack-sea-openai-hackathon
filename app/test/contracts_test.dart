@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/contracts.dart';
+import 'package:monastack/features/customers/contracts.dart';
 
 void main() {
   testWidgets('contract list clears after Sales access is removed', (

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/leave_calendar.dart';
-import 'package:monastack/leave_requests.dart';
+import 'package:monastack/features/hr/leave_calendar.dart';
+import 'package:monastack/features/hr/leave_requests.dart';
 
 void main() {
   testWidgets('leave requests opens the scoped calendar', (tester) async {

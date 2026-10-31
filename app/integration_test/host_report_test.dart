@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:monastack/main.dart';
+import 'package:monastack/app/monastack_app.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -33,8 +33,7 @@ void main() {
     await tester.tap(find.text('Agent proposals').last);
     for (
       var i = 0;
-      i < 60 &&
-          find.text('Synthetic app host report').evaluate().isEmpty;
+      i < 60 && find.text('Synthetic app host report').evaluate().isEmpty;
       i++
     ) {
       await tester.pump(const Duration(milliseconds: 100));

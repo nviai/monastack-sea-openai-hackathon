@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/chat_history.dart';
+import 'package:monastack/features/office/communication/chat_history.dart';
 
 void main() {
   testWidgets(

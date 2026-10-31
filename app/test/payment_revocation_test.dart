@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/payment_authorizations.dart';
+import 'package:monastack/features/finance/payment_authorizations.dart';
 
 void main() {
   for (final loss in ['access', 'approval role']) {

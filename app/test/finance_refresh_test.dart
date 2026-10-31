@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/expense_approvals.dart';
-import 'package:monastack/journal_entries.dart';
-import 'package:monastack/payment_authorizations.dart';
+import 'package:monastack/features/finance/expense_approvals.dart';
+import 'package:monastack/features/finance/journal_entries.dart';
+import 'package:monastack/features/finance/payment_authorizations.dart';
 
 void main() {
   testWidgets('journal reversal confirmation clears on access loss', (

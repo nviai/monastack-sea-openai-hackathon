@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/people_profiles.dart';
+import 'package:monastack/features/organization/people_profiles.dart';
 
 void main() {
   testWidgets(

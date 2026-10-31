@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/main.dart';
+import 'package:monastack/platform/core_policy.dart';
 
 void main() {
   test('native Rust bridge enforces room membership', () {

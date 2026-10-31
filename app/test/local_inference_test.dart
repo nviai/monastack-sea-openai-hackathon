@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/local_inference.dart';
+import 'package:monastack/features/inference/local_inference.dart';
 
 void main() {
   testWidgets('generation is explicit and displays the local response', (

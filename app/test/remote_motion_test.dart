@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/remote_motion.dart';
+import 'package:monastack/features/office/presence/remote_motion.dart';
 
 Map<String, dynamic> snapshot({
   int seq = 1,

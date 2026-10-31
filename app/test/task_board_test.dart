@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/task_board.dart';
+import 'package:monastack/features/tasks/task_board.dart';
 
 void main() {
   testWidgets('read-only member can inspect tasks without edit controls', (

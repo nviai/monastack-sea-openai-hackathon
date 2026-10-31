@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/customer_directory.dart';
-import 'package:monastack/expense_approvals.dart';
-import 'package:monastack/leave_requests.dart';
-import 'package:monastack/incidents.dart';
-import 'package:monastack/sales_pipeline.dart';
-import 'package:monastack/meetings.dart';
-import 'package:monastack/support_cases.dart';
-import 'package:monastack/journal_entries.dart';
-import 'package:monastack/payment_authorizations.dart';
+import 'package:monastack/features/customers/customer_directory.dart';
+import 'package:monastack/features/finance/expense_approvals.dart';
+import 'package:monastack/features/hr/leave_requests.dart';
+import 'package:monastack/features/operations/incidents.dart';
+import 'package:monastack/features/customers/sales_pipeline.dart';
+import 'package:monastack/features/knowledge/meetings.dart';
+import 'package:monastack/features/customers/support_cases.dart';
+import 'package:monastack/features/finance/journal_entries.dart';
+import 'package:monastack/features/finance/payment_authorizations.dart';
+import 'package:monastack/shared/utc_time.dart';
 
 void main() {
   testWidgets(

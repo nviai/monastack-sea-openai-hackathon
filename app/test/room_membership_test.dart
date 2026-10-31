@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:monastack/room_membership.dart';
+import 'package:monastack/features/office/rooms/room_membership.dart';
 
 const rooms = <Map<String, dynamic>>[
   {'id': 'finance', 'name': 'Finance', 'restricted': true},
