@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "workspace": {
+    "id": "nviai",
+    "name": "NVIAI Smart Technology",
+    "legal_name": "CÔNG TY TNHH CÔNG NGHỆ THÔNG MINH NVIAI",
+    "english_legal_name": "NVIAI SMART TECHNOLOGY COMPANY LIMITED",
+    "short_name": "NVIAI CO., LTD.",
+    "tax_code": "0317645141",
+    "address": "F 14, HM Town, 412 Nguyen Thi Minh Khai, Ban Co Ward, Ho Chi Minh City, Viet Nam",
+    "email": "contact@nviai.com",
+    "website": "https://nviai.com",
+    "phone": "(028) 73022888",
+    "fax": "(028) 62914745"
+  },
+  "actors": [
+    {
+      "id": "an",
+      "name": "Nguyễn Văn An",
+      "email": "an@nviai.com",
+      "role": "org-admin",
+      "kind": "human"
+    },
+    {
+      "id": "thao",
+      "name": "Đỗ Phương Thảo",
+      "email": "thao@nviai.com",
+      "role": "pm",
+      "kind": "human"
+    },
+    {
+      "id": "hung",
+      "name": "Vũ Mạnh Hùng",
+      "email": "hung@nviai.com",
+      "role": "dev",
+      "kind": "human"
+    },
+    {
+      "id": "tuan",
+      "name": "Trần Anh Tuấn",
+      "email": "tuan@nviai.com",
+      "role": "dev",
+      "kind": "human"
+    },
+    {
+      "id": "linh",
+      "name": "Phạm Khánh Linh",
+      "email": "linh@nviai.com",
+      "role": "qa",
+      "kind": "human"
+    },
+    {
+      "id": "mai",
+      "name": "Lê Thị Mai",
+      "email": "mai@nviai.com",
+      "role": "sales",
+      "kind": "human"
+    },
+    {
+      "id": "duc",
+      "name": "Hoàng Minh Đức",
+      "email": "duc@nviai.com",
+      "role": "cs",
+      "kind": "human"
+    },
+    {
+      "id": "van",
+      "name": "Ngô Thu Vân",
+      "email": "van@nviai.com",
+      "role": "accountant",
+      "kind": "human"
+    },
+    {
+      "id": "le-pha",
+      "name": "Pha Le",
+      "email": "le.pha@nviai.com",
+      "role": "dev",
+      "kind": "human"
+    },
+    {
+      "id": "hua-hao",
+      "name": "Hao Hua",
+      "email": "hua.hao@nviai.com",
+      "role": "dev, pm",
+      "kind": "human"
+    },
+    {
+      "id": "le-triet",
+      "name": "Triet Le",
+      "email": "le.triet@nviai.com",
+      "role": "dev, qa",
+      "kind": "human"
+    },
+    {
+      "id": "mona",
+      "name": "Mona",
+      "role": "agent",
+      "kind": "agent"
+    },
+    {
+      "id": "dev-agent",
+      "name": "Dev Agent",
+      "role": "agent",
+      "kind": "agent"
+    },
+    {
+      "id": "qa-agent",
+      "name": "QA Agent",
+      "role": "agent",
+      "kind": "agent"
+    },
+    {
+      "id": "pm-agent",
+      "name": "PM Agent",
+      "role": "agent",
+      "kind": "agent"
+    },
+    {
+      "id": "sales-agent",
+      "name": "Sales Agent",
+      "role": "agent",
+      "kind": "agent"
+    },
+    {
+      "id": "cskh-agent",
+      "name": "Customer Support Agent",
+      "role": "agent",
+      "kind": "agent"
+    }
+  ],
+  "products": [
+    "Meslingo",
+    "Monastack"
+  ],
+  "rooms": [
+    {
+      "id": "lobby",
+      "name": "Lobby",
+      "x": 0,
+      "y": 0,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "dev",
+      "name": "Dev & QA",
+      "x": 1,
+      "y": 0,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "product",
+      "name": "Product / PM",
+      "x": 2,
+      "y": 0,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "sales",
+      "name": "Sales",
+      "x": 0,
+      "y": 1,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "support",
+      "name": "Customer Support",
+      "x": 1,
+      "y": 1,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "hr",
+      "name": "HR",
+      "x": 2,
+      "y": 1,
+      "restricted": true,
+      "members": []
+    },
+    {
+      "id": "finance",
+      "name": "Finance",
+      "x": 0,
+      "y": 2,
+      "restricted": true,
+      "members": [
+        "van"
+      ]
+    },
+    {
+      "id": "meeting",
+      "name": "Meeting",
+      "x": 1,
+      "y": 2,
+      "restricted": false,
+      "members": []
+    },
+    {
+      "id": "lounge",
+      "name": "Lounge",
+      "x": 2,
+      "y": 2,
+      "restricted": false,
+      "members": []
+    }
+  ]
+}

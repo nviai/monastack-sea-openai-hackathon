@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monastack — The AI-native operating stack · Sea × OpenAI Codex Hackathon Vietnam 2026</title>
+<style>
+  :root {
+    --bg: #0a0f1e;
+    --bg2: #0f1630;
+    --panel: #131c38;
+    --panel2: #182345;
+    --line: #26335a;
+    --text: #e9edf8;
+    --muted: #96a3c4;
+    --dim: #6b7799;
+    --amber: #ffb547;
+    --teal: #3dd6c6;
+    --violet: #9b8cff;
+    --rose: #ff6b8a;
+    --green: #5be49b;
+    --sky: #5ab8ff;
+    --font: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #05080f; color: var(--text); font-family: var(--font); overflow: hidden; }
+  #viewport { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; width: 1920px; height: 1080px; transform-origin: center center; flex: none; }
+
+  .slide {
+    position: absolute; inset: 0; padding: 96px 120px 100px;
+    background:
+      radial-gradient(1200px 700px at 100% 0%, rgba(155,140,255,.10), transparent 60%),
+      radial-gradient(900px 600px at 0% 100%, rgba(61,214,198,.08), transparent 60%),
+      var(--bg);
+    display: none; flex-direction: column; overflow: hidden;
+  }
+  .slide.active { display: flex; }
+  .slide::after {
+    content: attr(data-label); position: absolute; left: 120px; bottom: 44px;
+    font-size: 20px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+  }
+  .pageno { position: absolute; right: 120px; bottom: 40px; font: 500 22px var(--mono); color: var(--dim); }
+
+  .kicker { font-size: 24px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--teal); margin-bottom: 22px; }
+  h1 { font-size: 150px; line-height: .95; font-weight: 800; letter-spacing: -.035em; }
+  h2 { font-size: 64px; line-height: 1.06; font-weight: 750; letter-spacing: -.025em; max-width: 1600px; }
+  h3 { font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+  p, li { font-size: 28px; line-height: 1.45; color: var(--muted); }
+  .lead { font-size: 36px; line-height: 1.4; color: var(--muted); max-width: 1500px; margin-top: 28px; }
+  b, strong { color: var(--text); font-weight: 650; }
+  .amber { color: var(--amber); } .teal { color: var(--teal); } .violet { color: var(--violet); }
+  .rose { color: var(--rose); } .green { color: var(--green); } .sky { color: var(--sky); }
+  .grad { display: inline-block; background: linear-gradient(90deg, var(--amber), var(--rose) 45%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .mono { font-family: var(--mono); }
+
+  .row { display: flex; gap: 40px; }
+  .col { display: flex; flex-direction: column; }
+  .grow { flex: 1; }
+  .mt-s { margin-top: 24px; } .mt-m { margin-top: 48px; } .mt-l { margin-top: 72px; } .mt-auto { margin-top: auto; }
+
+  .card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 24px; padding: 36px 40px; }
+  .card h3 { margin-bottom: 12px; }
+  .card p { font-size: 25px; }
+  .card.hl { border-color: rgba(255,181,71,.55); box-shadow: 0 0 0 1px rgba(255,181,71,.15), 0 30px 80px -40px rgba(255,181,71,.45); }
+
+  .pill { white-space: nowrap; display: inline-flex; align-items: center; gap: 10px; padding: 10px 22px; border-radius: 999px; font-size: 22px; font-weight: 600; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .pill .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .tag { display: inline-block; padding: 4px 14px; border-radius: 8px; font-size: 18px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .tag.real { background: rgba(91,228,155,.14); color: var(--green); }
+  .tag.exp { background: rgba(255,181,71,.14); color: var(--amber); }
+  .tag.plan { background: rgba(150,163,196,.14); color: var(--muted); }
+
+  ul.clean { list-style: none; }
+  ul.clean li { position: relative; padding-left: 40px; margin: 14px 0; }
+  ul.clean li::before { content: ""; position: absolute; left: 4px; top: 16px; width: 14px; height: 14px; border-radius: 4px; background: var(--teal); transform: rotate(45deg); }
+
+  table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 24px; }
+  table.t th { text-align: left; font-size: 19px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 650; padding: 0 22px 14px; border-bottom: 1px solid var(--line); }
+  table.t td { padding: 16px 22px; border-bottom: 1px solid rgba(38,51,90,.6); color: var(--muted); vertical-align: middle; line-height: 1.3; }
+  table.t td:first-child { color: var(--text); font-weight: 600; }
+
+  .ev13 .card p { font-size: 22px; line-height: 1.45; }
+  .stat { font-size: 84px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .stat-l { font-size: 22px; color: var(--muted); margin-top: 12px; line-height: 1.35; }
+
+  .code { font: 21px/1.5 var(--mono); background: #0b1126; border: 1px solid var(--line); border-radius: 20px; padding: 30px 34px; color: #c9d3ee; white-space: pre; }
+  .code .k { color: var(--sky); } .code .s { color: var(--green); } .code .n { color: var(--amber); } .code .c { color: var(--dim); }
+
+  .notes { display: none; }
+  #notes-panel { position: fixed; left: 0; right: 0; bottom: 0; max-height: 38vh; overflow: auto; background: rgba(5,8,15,.96); border-top: 1px solid var(--line); padding: 18px 28px; font-size: 17px; line-height: 1.55; color: #cfd6ea; display: none; z-index: 10; }
+  #notes-panel.show { display: block; }
+  #progress { position: fixed; left: 0; top: 0; height: 4px; background: linear-gradient(90deg, var(--teal), var(--violet)); transition: width .25s ease; z-index: 11; }
+  #hint { position: fixed; right: 16px; top: 12px; font-size: 13px; color: #4f5a7a; z-index: 11; }
+
+  /* Title */
+  .s-title { justify-content: center; }
+  .formula { display: flex; align-items: center; gap: 26px; font-size: 54px; font-weight: 700; margin-top: 44px; }
+  .formula .op { color: var(--dim); font-weight: 400; }
+  .formula .blk { padding: 12px 30px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); }
+
+  /* Failure grid */
+  .fgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; margin-top: 46px; }
+  .fcard { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 26px 26px 24px; }
+  .fcard .ico { font: 700 20px var(--mono); color: var(--rose); margin-bottom: 10px; }
+  .fcard h3 { font-size: 27px; margin-bottom: 8px; }
+  .fcard p { font-size: 21px; line-height: 1.38; }
+
+  /* Silos */
+  .silos { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; }
+  .silo { border: 1px dashed #34426e; border-radius: 18px; padding: 22px 20px; background: rgba(19,28,56,.6); }
+  .silo b { display: block; font-size: 25px; margin-bottom: 6px; }
+  .silo span { font-size: 19px; color: var(--dim); }
+
+  /* Timeline */
+  .tl { position: relative; padding-left: 44px; }
+  .tl::before { content: ""; position: absolute; left: 13px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+  .tl .ev { position: relative; margin-bottom: 22px; }
+  .tl .ev::before { content: ""; position: absolute; left: -40px; top: 10px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); border: 3px solid var(--teal); }
+  .tl .ev.h::before { border-color: var(--amber); }
+  .tl .who { font: 600 19px var(--mono); color: var(--teal); }
+  .tl .ev.h .who { color: var(--amber); }
+  .tl .ev p { font-size: 24px; color: var(--text); margin-top: 2px; }
+  .tl .ev p small { display: block; font-size: 20px; color: var(--muted); }
+
+  /* Roadmap */
+  .road { display: grid; grid-template-columns: repeat(7, 1fr); gap: 16px; margin-top: 56px; }
+  .stage { border-radius: 20px; padding: 30px 24px; background: var(--panel); border: 1px solid var(--line); min-height: 520px; display: flex; flex-direction: column; }
+  .stage .n { font: 700 46px var(--mono); color: var(--dim); }
+  .stage h3 { font-size: 28px; margin: 14px 0 16px; }
+  .stage p { font-size: 23px; line-height: 1.45; }
+  .stage .tag { margin-top: auto; align-self: flex-start; }
+
+  @media print {
+    html, body { overflow: visible; background: var(--bg); }
+    #viewport { position: static; display: block; }
+    #stage { transform: none !important; width: 1920px; height: auto; }
+    .slide { display: flex !important; position: relative; width: 1920px; height: 1080px; page-break-after: always; break-after: page; }
+    #notes-panel, #progress, #hint { display: none !important; }
+    .card.hl { box-shadow: none; }
+    .grad { background: none; color: var(--amber); -webkit-text-fill-color: var(--amber); }
+    @page { size: 1920px 1080px; margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div id="hint">← → navigate · N notes · F fullscreen</div>
+<div id="viewport"><div id="stage">
+
+<!-- 1 · TITLE -->
+<section class="slide s-title" data-label="Monastack · by NVIAI">
+  <div class="kicker">Sea × OpenAI Codex Hackathon · Vietnam 2026</div>
+  <h1>Mona<span class="grad">stack</span></h1>
+  <div class="formula">
+    <span class="blk">Mono</span><span class="op">+</span>
+    <span class="blk amber">AI</span><span class="op">+</span>
+    <span class="blk">Stack</span><span class="op">=</span>
+    <span style="white-space:nowrap">one AI-native company stack</span>
+  </div>
+  <p class="lead">A workspace where <b>people and AI agents run a company together</b>: clean data by design, agents you can talk to like coworkers, and intelligence that runs at the edge.</p>
+  <div class="row mt-l" style="gap:18px">
+    <span class="pill"><span class="dot" style="background:var(--amber)"></span>AI-Native Products &amp; Operations</span>
+    <span class="pill"><span class="dot" style="background:var(--teal)"></span>Autonomous &amp; Adaptive AI</span>
+    <span class="pill"><span class="dot" style="background:var(--violet)"></span>Deep Domain AI</span>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">Open: "We're NVIAI. Monastack is Mono + AI + Stack: one place that holds every stack a company runs on, designed from day one to be read and operated by AI agents, not just clicked by humans." We touch all three hackathon directions, primarily AI-Native Products &amp; Operations.</aside>
+</section>
+
+<!-- 2 · THE MOMENT -->
+<section class="slide" data-label="The moment">
+  <div class="kicker">The moment</div>
+  <h2>Agents can now rebuild almost any app.<br><span class="grad">So why are we rebuilding apps made for humans?</span></h2>
+  <div class="row mt-l" style="align-items:stretch">
+    <div class="card" style="flex:1.05">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 class="mono">github.com/morluto/rea</h3>
+        <span class="pill"><span class="dot" style="background:var(--amber)"></span>~408k ★</span>
+      </div>
+      <p class="mt-s">"Reverse Engineer Anything": <b>one MCP server for reverse engineering binaries, apps and runtime behavior</b>. Agents can take apart well-known software and rebuild similar features.</p>
+      <p class="mt-s">It's one of the most talked-about repos in AI right now, and it deserves the attention.</p>
+    </div>
+    <div class="card hl" style="flex:1">
+      <h3 class="amber">Our take: it's a great party trick</h3>
+      <ul class="clean mt-s">
+        <li>A recreated app still has a <b>human interface</b>: menus, tabs, dashboards, settings pages.</li>
+        <li>The next big user of software is <b>an agent acting on our behalf</b>, not a person clicking.</li>
+        <li>Cloning yesterday's UI gives the agent the same mess it already struggles with.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="mt-auto" style="font-size:40px;font-weight:700;color:var(--text)">Why clone the past when <span class="teal">the user itself is changing</span>?</p>
+  <div class="pageno"></div>
+  <aside class="notes">Acknowledge REA respectfully. It's impressive and popular. Our point: reverse-engineering and re-implementing human-centric apps is fun, but it optimizes for the wrong user. Bridge to the next slide: agents see differently.</aside>
+</section>
+
+<!-- 3 · HOW AGENTS SEE -->
+<section class="slide" data-label="Insight">
+  <div class="kicker">Insight</div>
+  <h2>Humans and agents don't see the same company</h2>
+  <div class="mt-m">
+    <table class="t">
+      <thead><tr><th style="width:22%"></th><th style="width:39%">A human sees</th><th>An AI agent sees</th></tr></thead>
+      <tbody>
+        <tr><td>Input</td><td>Pixels, layouts, colors, icons</td><td><b class="teal">Tokens, records, schemas</b></td></tr>
+        <tr><td>Navigation</td><td>Menus, tabs, 12 SaaS logins</td><td><b class="teal">Tool calls (MCP) with scoped permissions</b></td></tr>
+        <tr><td>Noise</td><td>Skims past it without thinking</td><td><b class="teal">Every token can sway the answer</b></td></tr>
+        <tr><td>Memory</td><td>Years of tacit company context</td><td><b class="teal">Only what fits in the context window</b></td></tr>
+        <tr><td>Contradictions</td><td>"Ask Mai, she knows which sheet is right"</td><td><b class="teal">Picks one, or blends both, with full confidence</b></td></tr>
+        <tr><td>Working hours</td><td>8 hours, one task at a time</td><td><b class="teal">24/7, many tasks in parallel</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="lead mt-auto">Agents will soon run largely on their own, following our direction. When they do, <b>the UI layer of every SaaS becomes a translation layer nobody needs.</b> <span class="amber">The data layer becomes the product.</span></p>
+  <div class="pageno"></div>
+  <aside class="notes">Core thesis. Human UX was designed for eyes and hands. Agents consume structure. In the near future, operators give direction and agents execute. What matters then is how clean, typed and permissioned the underlying data is.</aside>
+</section>
+
+<!-- 4 · FRAGMENTED STACK -->
+<section class="slide" data-label="Problem · fragmentation">
+  <div class="kicker">Problem 1 · Fragmentation</div>
+  <h2>A typical company runs on a dozen tools, and each one has its own version of the truth</h2>
+  <div class="silos mt-l">
+    <div class="silo"><b>Helpdesk</b><span>tickets, chats</span></div>
+    <div class="silo"><b>Warehouse</b><span>stock, orders</span></div>
+    <div class="silo"><b>Git &amp; CI</b><span>issues, PRs</span></div>
+    <div class="silo"><b>App</b><span>events, crashes</span></div>
+    <div class="silo"><b>HRM</b><span>people, leave</span></div>
+    <div class="silo"><b>CRM</b><span>leads, deals</span></div>
+    <div class="silo"><b>Accounting</b><span>journals, invoices</span></div>
+    <div class="silo"><b>Chat</b><span>threads, DMs</span></div>
+    <div class="silo"><b>Docs</b><span>wikis, files</span></div>
+    <div class="silo"><b>Calendar</b><span>meetings</span></div>
+    <div class="silo"><b>Spreadsheets</b><span>"final_v3.xlsx"</span></div>
+    <div class="silo"><b>Email</b><span>everything else</span></div>
+  </div>
+  <div class="row mt-l">
+    <div class="card grow"><h3 class="teal">The trend</h3><p>Teams are pulling everything into <b>one project</b> (monorepos, single workspaces) so it's easier to manage and <b>so AI can read it all</b>.</p></div>
+    <div class="card grow hl"><h3 class="amber">The catch</h3><p>Pouring every silo into one place <b>moves the mess without cleaning it</b>. Twelve data models, duplicate customers and conflicting records end up in the same context window.</p></div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">Every department picks its own SaaS. Many companies now start "one project" setups (monorepo + shared workspace) for manageability and AI readability. But consolidation without a shared schema just centralizes the noise.</aside>
+</section>
+
+<!-- 5 · CONTEXT FAILURES -->
+<section class="slide" data-label="Problem · context">
+  <div class="kicker">Problem 2 · Context quality</div>
+  <h2>Messy context makes agents <span class="rose">confidently wrong</span></h2>
+  <div class="fgrid">
+    <div class="fcard"><div class="ico">01</div><h3>Noise</h3><p>Logs, signatures and UI clutter bury the facts that matter.</p></div>
+    <div class="fcard"><div class="ico">02</div><h3>Context poisoning</h3><p>One wrong fact or earlier hallucination gets reused as truth.</p></div>
+    <div class="fcard"><div class="ico">03</div><h3>Overload</h3><p>Too much context, so the model fixates on history and misses the task.</p></div>
+    <div class="fcard"><div class="ico">04</div><h3>Confusion</h3><p>Irrelevant tools and documents push it toward the wrong action.</p></div>
+    <div class="fcard"><div class="ico">05</div><h3>Clash</h3><p>CRM says "active", billing says "churned". Which one is right?</p></div>
+    <div class="fcard"><div class="ico">06</div><h3>Staleness</h3><p>Old records with no version or timestamp look current.</p></div>
+    <div class="fcard"><div class="ico">07</div><h3>Duplicates</h3><p>"ABC Co.", "Cty ABC", "abc corp": is that three customers or one?</p></div>
+    <div class="fcard"><div class="ico">08</div><h3>Leakage</h3><p>The agent reads data its requester was never allowed to see.</p></div>
+    <div class="fcard"><div class="ico">09</div><h3>Prompt injection</h3><p>Instructions hidden inside tickets, emails and documents.</p></div>
+    <div class="fcard"><div class="ico">10</div><h3>Context rot</h3><p>Recall drops in long contexts (the "lost in the middle" effect).</p></div>
+  </div>
+  <div class="row mt-auto" style="align-items:center;gap:28px">
+    <span class="pill" style="font-size:26px"><span class="dot" style="background:var(--rose)"></span>Garbage in → confident garbage out</span>
+    <p style="font-size:27px">The result is <b>hallucinations, bad decisions and unsafe actions</b>, and a bigger model doesn't fix bad inputs.</p>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">Walk through 3–4 of these quickly, not all ten: poisoning, clash, duplicates, injection. The point: hallucination is often a data problem, not only a model problem. Feeding agents raw SaaS exports makes this worse.</aside>
+</section>
+
+<!-- 6 · SOLUTION -->
+<section class="slide" data-label="Solution">
+  <div class="kicker">Our answer</div>
+  <h2>Monastack: rebuild the <span class="grad">foundation</span> for agents, not the apps</h2>
+  <p class="lead">One AI-native stack, designed in from day one: simpler, cleaner, and easy for both agents and people to work with.</p>
+  <div class="row mt-l grow" style="align-items:stretch">
+    <div class="card grow">
+      <div class="mono teal" style="font-size:22px">PILLAR 1</div>
+      <h3 class="mt-s" style="font-size:38px">Clean by construction</h3>
+      <p class="mt-s">Every source writes through <b>standard schemas</b> at the gate. Data is typed, deduplicated, versioned and permission-scoped before any agent reads it.</p>
+    </div>
+    <div class="card grow hl">
+      <div class="mono amber" style="font-size:22px">PILLAR 2</div>
+      <h3 class="mt-s" style="font-size:38px">Agents as coworkers</h3>
+      <p class="mt-s">Agents have identities, desks, voices and an auditable work history. You <b>talk to them like colleagues</b> in a virtual office instead of shuffling cards on a board.</p>
+    </div>
+    <div class="card grow">
+      <div class="mono violet" style="font-size:22px">PILLAR 3</div>
+      <h3 class="mt-s" style="font-size:38px">Edge-first mesh</h3>
+      <p class="mt-s">Local AI on every site, peer data nodes with replicas, and <b>frontier LLM nodes</b> used only when a task needs them. The result is lower server cost, privacy and offline resilience.</p>
+    </div>
+  </div>
+  <p class="mt-m" style="font-size:28px">…all built on <b>proven open source wrapped with MCP</b>, instead of rewritten from scratch.</p>
+  <div class="pageno"></div>
+  <aside class="notes">Three pillars. Emphasize: we don't re-implement Zendesk or Odoo. We build the AI-native layer (schemas, identities, policies, agents) and plug in battle-tested open source underneath.</aside>
+</section>
+
+<!-- 7 · OPEN SOURCE + MCP -->
+<section class="slide" data-label="Open source + MCP">
+  <div class="kicker">Don't rebuild: orchestrate</div>
+  <h2>Proven open source underneath, MCP on top</h2>
+  <div class="mt-m">
+    <table class="t">
+      <thead><tr><th style="width:21%">Capability</th><th style="width:30%">Open source we stand on</th><th>Monastack layer (schema + MCP)</th><th style="width:11%">Status</th></tr></thead>
+      <tbody>
+        <tr><td>Chat &amp; federation</td><td><b>Matrix</b> (Synapse / Conduit)</td><td>Room policies, agent identities, <span class="mono">rooms.read / post</span></td><td><span class="tag plan">Plan</span></td></tr>
+        <tr><td>Voice &amp; video</td><td><b>WebRTC</b> + <b>LiveKit</b></td><td>Policy-gated tokens, room-epoch isolation</td><td><span class="tag exp">Tested</span></td></tr>
+        <tr><td>Customer support</td><td><b>Chatwoot</b></td><td><span class="mono">support.case</span> schema, CS-agent tools</td><td><span class="tag plan">Plan</span></td></tr>
+        <tr><td>CRM</td><td><b>Twenty</b></td><td><span class="mono">customer / opportunity / contract</span></td><td><span class="tag plan">Plan</span></td></tr>
+        <tr><td>ERP · inventory · HRM · accounting</td><td><b>Odoo</b> / <b>ERPNext</b></td><td><span class="mono">stock · leave · expense · journal</span></td><td><span class="tag plan">Plan</span></td></tr>
+        <tr><td>Dev &amp; code</td><td><b>Forgejo / Gitea</b> + <b>Codex CLI</b></td><td>Dev Agent in a sandbox → PR for review</td><td><span class="tag exp">Tested</span></td></tr>
+        <tr><td>Edge inference</td><td><b>MLX</b>, <b>llama.cpp</b>, <b>Ollama</b> + open weights (<b>Qwen</b>)</td><td>Local inference node, token-gated</td><td><span class="tag real">Built</span></td></tr>
+        <tr><td>Core &amp; app</td><td><b>Rust</b>, <b>SQLite</b>, <b>Flutter</b>, <b>Flame</b>, <b>Docker</b></td><td>One shared domain core on every node</td><td><span class="tag real">Built</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="mt-auto" style="font-size:27px">Mature projects give us <b>stability and years of hardening</b>. Our MCP servers give agents <b>one clean, typed, permissioned interface</b> to all of them.</p>
+  <div class="pageno"></div>
+  <aside class="notes">Be honest about status: Built = in our prototype; Tested = isolated experiment run and documented (LiveKit isolation, Codex CLI in networkless container); Plan = integration target. Why open source: quality and stability we couldn't match by rebuilding in a hackathon or even a year.</aside>
+</section>
+
+<!-- 8 · CANONICAL SCHEMA -->
+<section class="slide" data-label="Canonical schema">
+  <div class="kicker">Pillar 1 · Clean by construction</div>
+  <h2>Standard schemas clean data at the gate, before it reaches any agent</h2>
+  <div class="row mt-m grow" style="align-items:stretch;gap:36px">
+    <div class="col" style="flex:1.25">
+      <svg viewBox="0 0 980 560" width="100%" style="flex:1">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#96a3c4"/></marker>
+        </defs>
+        <g font-family="Inter, -apple-system, sans-serif" font-size="19" fill="#e9edf8">
+          <!-- sources -->
+          <g id="srcs"></g>
+          <!-- gate -->
+          <rect x="250" y="40" width="250" height="480" rx="22" fill="#1b2650" stroke="#ffb547" stroke-width="2"/>
+          <text x="375" y="84" text-anchor="middle" font-size="24" font-weight="700" fill="#ffb547">Schema Gate</text>
+          <g font-size="18" fill="#c9d3ee">
+            <text x="272" y="134">✓ Validate typed fields</text>
+            <text x="272" y="178">✓ Resolve identity</text>
+            <text x="300" y="200" fill="#6b7799">stable IDs, no dupes</text>
+            <text x="272" y="244">✓ Attach ACL scope</text>
+            <text x="272" y="288">✓ Stamp provenance</text>
+            <text x="300" y="310" fill="#6b7799">source + version</text>
+            <text x="272" y="354">✓ Idempotent op_id</text>
+            <text x="272" y="398">✓ Quarantine free text</text>
+            <text x="300" y="420" fill="#6b7799">data, never commands</text>
+            <text x="272" y="464">✓ Tombstones, no silent</text>
+            <text x="300" y="486" fill="#6b7799">deletes</text>
+          </g>
+          <!-- ledger -->
+          <rect x="560" y="150" width="190" height="260" rx="22" fill="#132a3a" stroke="#3dd6c6" stroke-width="2"/>
+          <text x="655" y="215" text-anchor="middle" font-size="22" font-weight="700" fill="#3dd6c6">Clean</text>
+          <text x="655" y="243" text-anchor="middle" font-size="22" font-weight="700" fill="#3dd6c6">company</text>
+          <text x="655" y="271" text-anchor="middle" font-size="22" font-weight="700" fill="#3dd6c6">ledger</text>
+          <text x="655" y="318" text-anchor="middle" font-size="16" fill="#96a3c4">versioned records</text>
+          <text x="655" y="342" text-anchor="middle" font-size="16" fill="#96a3c4">outbox · audit</text>
+          <!-- packs -->
+          <rect x="800" y="150" width="170" height="260" rx="22" fill="#211d47" stroke="#9b8cff" stroke-width="2"/>
+          <text x="885" y="215" text-anchor="middle" font-size="22" font-weight="700" fill="#9b8cff">Context</text>
+          <text x="885" y="243" text-anchor="middle" font-size="22" font-weight="700" fill="#9b8cff">packs</text>
+          <text x="885" y="292" text-anchor="middle" font-size="16" fill="#96a3c4">minimal</text>
+          <text x="885" y="316" text-anchor="middle" font-size="16" fill="#96a3c4">permission-filtered</text>
+          <text x="885" y="340" text-anchor="middle" font-size="16" fill="#96a3c4">fresh · cited</text>
+          <text x="885" y="380" text-anchor="middle" font-size="18" fill="#e9edf8">→ agents</text>
+          <line x1="500" y1="280" x2="555" y2="280" stroke="#96a3c4" stroke-width="2.5" marker-end="url(#ar)"/>
+          <line x1="750" y1="280" x2="795" y2="280" stroke="#96a3c4" stroke-width="2.5" marker-end="url(#ar)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="col" style="flex:1">
+<div class="code"><span class="c">// one envelope for every record</span>
+{
+  <span class="k">"id"</span>: <span class="s">"case_01JBX4…"</span>,
+  <span class="k">"type"</span>: <span class="s">"support.case.v1"</span>,
+  <span class="k">"tenant"</span>: <span class="s">"nviai"</span>,
+  <span class="k">"scope"</span>: { <span class="k">"room"</span>: <span class="s">"customer-support"</span> },
+  <span class="k">"actor"</span>: <span class="s">"agent:cskh-agent"</span>,
+  <span class="k">"version"</span>: <span class="n">7</span>, <span class="k">"op_id"</span>: <span class="s">"op_9f2…"</span>,
+  <span class="k">"source"</span>: { <span class="k">"system"</span>: <span class="s">"chatwoot"</span>,
+              <span class="k">"ref"</span>: <span class="s">"conv/4821"</span> },
+  <span class="k">"links"</span>: { <span class="k">"customer"</span>: <span class="s">"cus_…"</span>,
+             <span class="k">"order"</span>: <span class="s">"ord_…"</span> },
+  <span class="k">"untrusted"</span>: [<span class="s">"body"</span>]
+}</div>
+      <p class="mt-s" style="font-size:23px"><b class="teal">Fixes</b> noise → typed fields · poisoning → provenance · clash → one owner per field · staleness → versions · duplicates → stable IDs · leakage → ACL at retrieval · injection → quarantined text</p>
+    </div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">This is the heart of the product. Customer support, warehouse, dev, app, HRM, CRM and finance all write through the same gate. Agents never read raw exports; they get small, fresh, permission-filtered context packs with citations back to records. Map each failure mode from slide 5 to a fix.</aside>
+</section>
+
+<!-- 9 · AGENTS AS COWORKERS -->
+<section class="slide" data-label="Agents as coworkers">
+  <div class="kicker">Pillar 2 · Agents as coworkers</div>
+  <h2>Talk to agents like colleagues, not tickets</h2>
+  <div class="row mt-m grow" style="align-items:stretch;gap:48px">
+    <div class="card" style="flex:1.2;padding:20px;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%, #1d2a55, #10172f)">
+      <svg id="office" viewBox="0 0 960 640" width="100%"></svg>
+    </div>
+    <div class="col" style="flex:1">
+      <ul class="clean">
+        <li>A <b>2.5D virtual office</b>: Lobby with <b class="amber">Mona's</b> desk, Dev &amp; QA, Product, Sales, Support, HR, Finance, Meeting, Lounge.</li>
+        <li>Every agent has an <b>identity, role, desk and presence</b>. Presence comes from a real runtime heartbeat, so offline means offline.</li>
+        <li><b>Walk up and talk</b>: chat, DM, voice, or pull an agent into a meeting, the same way you would with a human.</li>
+        <li><b>Room policy = data policy.</b> What an agent can hear, read and do depends on the rooms it's allowed into.</li>
+        <li>Every action leaves an <b>auditable work history</b>.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">This is the "AGI-style" interaction: operators don't fill forms or drag cards; they direct agents the way they'd direct people. Seeded agents: Mona (assistant / chief of staff), dev-agent, qa-agent, pm-agent, sales-agent, cskh-agent. Agents are separate principals from humans. Restricted rooms (HR, Finance) default-deny, and the server enforces this, not just the UI.</aside>
+</section>
+
+<!-- 10 · A MORNING WITH MONA -->
+<section class="slide" data-label="Experience">
+  <div class="kicker">Experience</div>
+  <h2>A morning with Mona</h2>
+  <div class="row mt-m grow" style="gap:56px">
+    <div class="tl" style="flex:1.35;align-self:flex-start">
+      <div class="ev h"><div class="who">09:00 · OPERATOR → MONA (voice, at Mona's desk)</div><p>"Stock of SKU-A is low and three customers complained about delays. Take care of it."</p></div>
+      <div class="ev"><div class="who">MONA → CSKH-AGENT</div><p>Drafts replies to 3 open <span class="mono">support.case</span> records, with cited order status<small>Linked by stable IDs, so there's no guessing which "ABC Co." it is</small></p></div>
+      <div class="ev"><div class="who">MONA → ERP via MCP</div><p>Checks stock and proposes a reorder<small>Approval card shows the exact supplier, quantity and amount</small></p></div>
+      <div class="ev"><div class="who">MONA → DEV-AGENT → PROCESS NODE</div><p>Fixes the order-tracking bug with Codex in a networkless sandbox and opens a PR</p></div>
+      <div class="ev"><div class="who">MONA → PM-AGENT</div><p>Updates the board and books a 15-min sync in the Meeting room</p></div>
+      <div class="ev h"><div class="who">10:30 · MONA → OPERATOR</div><p>Reports back by voice with a summary, evidence links and 1 approval waiting</p></div>
+    </div>
+    <div class="col" style="flex:1;gap:22px">
+      <div class="card hl"><h3 class="amber">Autonomous, but on a leash</h3>
+        <ul class="clean"><li>Scoped agent identity</li><li>Budgets and deadlines</li><li>Durable, fenced job ownership</li><li>Human approval before any side effect</li><li>Cancel anytime · full audit trail</li></ul>
+      </div>
+      <p style="font-size:21px"><span class="tag exp">Target UX</span> Durable job proposals, opt-in host claims and fenced reports are already built in the prototype.</p>
+    </div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">Tell this as a story. One sentence of direction fans out to four agents across support, operations, dev and PM. The guardrails are what make autonomy deployable: approval is bound to the exact action content, so an agent can't get approval for X and then do Y. Be clear this is the target flow; job lifecycle, claims and fencing exist today.</aside>
+</section>
+
+<!-- 11 · NVIAI EDGE ARCHITECTURE -->
+<section class="slide" data-label="Architecture">
+  <div class="kicker">Pillar 3 · NVIAI = New Vision AI &amp; IoT</div>
+  <h2>Intelligence at the edge, frontier models on demand</h2>
+  <div class="row mt-s grow" style="gap:40px;align-items:stretch">
+    <div style="flex:1.55">
+      <svg viewBox="0 0 1080 700" width="100%" height="100%">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9b8cff"/></marker>
+          <linearGradient id="cloud" x1="0" x2="1"><stop offset="0" stop-color="#2a2160"/><stop offset="1" stop-color="#1c2a5c"/></linearGradient>
+        </defs>
+        <g font-family="Inter, -apple-system, sans-serif">
+          <!-- LLM nodes -->
+          <rect x="190" y="12" width="700" height="132" rx="30" fill="url(#cloud)" stroke="#9b8cff" stroke-width="2"/>
+          <text x="540" y="50" text-anchor="middle" font-size="24" font-weight="800" fill="#9b8cff">LLM NODES · frontier models</text>
+          <g font-size="17" fill="#e9edf8" text-anchor="middle">
+            <rect x="225" y="70" width="200" height="54" rx="14" fill="#141b3a" stroke="#3a3f7a"/><text x="325" y="103">GPT-5 class (API)</text>
+            <rect x="440" y="70" width="200" height="54" rx="14" fill="#141b3a" stroke="#3a3f7a"/><text x="540" y="103">Codex models</text>
+            <rect x="655" y="70" width="200" height="54" rx="14" fill="#141b3a" stroke="#3a3f7a"/><text x="755" y="103">Large self-hosted</text>
+          </g>
+          <!-- escalation arrows -->
+          <g stroke="#9b8cff" stroke-width="2.5" stroke-dasharray="8 7" fill="none">
+            <path d="M200 300 C 200 220, 300 190, 330 150" marker-end="url(#ar2)"/>
+            <path d="M540 290 L 540 150" marker-end="url(#ar2)"/>
+            <path d="M880 300 C 880 220, 780 190, 750 150" marker-end="url(#ar2)"/>
+          </g>
+          <text x="560" y="230" font-size="16" fill="#9b8cff">minimal, redacted context packs</text>
+
+          <!-- peer mesh links -->
+          <g stroke="#3dd6c6" stroke-width="2.5" opacity=".75">
+            <line x1="200" y1="400" x2="540" y2="380"/>
+            <line x1="540" y1="380" x2="880" y2="400"/>
+            <line x1="200" y1="400" x2="880" y2="400"/>
+            <line x1="200" y1="420" x2="300" y2="590"/>
+            <line x1="540" y1="420" x2="300" y2="590"/>
+            <line x1="540" y1="420" x2="780" y2="590"/>
+            <line x1="880" y1="420" x2="780" y2="590"/>
+            <line x1="300" y1="610" x2="780" y2="610"/>
+          </g>
+
+          <!-- site nodes -->
+          <g id="sites"></g>
+        </g>
+      </svg>
+    </div>
+    <div class="col" style="flex:1;justify-content:center">
+      <ul class="clean">
+        <li>Every site that runs the app runs <b>its own data node</b>. Nodes sync <b>peer to peer with replicas</b> instead of depending on one central server.</li>
+        <li><b>Edge AI</b> on Macs and IoT gateways handles the everyday work: classification, extraction, summaries, vision on cameras and sensors.</li>
+        <li><b>IoT streams stay local.</b> Only typed events enter the ledger.</li>
+        <li><b class="violet">LLM nodes</b> run frontier models that local hardware can't. They're called only with minimal, permission-filtered context.</li>
+        <li>Lower server bills, data stays private, and work continues offline.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">NVIAI stands for New Vision AI &amp; IoT. Each location that runs Monastack is also a node: app + local model + data replica. A process node is always on for agents and the Codex runner; a media node handles WebRTC/LiveKit. Nodes replicate peer to peer, so there's no single expensive server. LLM nodes are the escape hatch for frontier-grade reasoning and coding that a laptop can't run.</aside>
+</section>
+
+<!-- 12 · ROUTING -->
+<section class="slide" data-label="Routing">
+  <div class="kicker">Pillar 3 · Routing</div>
+  <h2>Send every task to the right model</h2>
+  <div class="row mt-m" style="align-items:stretch">
+    <div class="card grow"><div class="mono teal" style="font-size:20px">EDGE · LOCAL MODEL</div><h3 class="mt-s">Fast, private, offline</h3>
+      <ul class="clean"><li>Classify &amp; route tickets</li><li>Extract fields into schemas</li><li>Redact PII before escalation</li><li>Summarize meetings &amp; threads</li><li>Camera / sensor events (IoT)</li></ul></div>
+    <div class="card grow"><div class="mono amber" style="font-size:20px">PROCESS NODE · ALWAYS ON</div><h3 class="mt-s">Runs the agents</h3>
+      <ul class="clean"><li>24/7 agent jobs &amp; schedules</li><li>Codex runner in a sandbox</li><li>Workflows &amp; approvals</li><li>Same Rust core as the app</li><li>Scoped service identity</li></ul></div>
+    <div class="card grow"><div class="mono violet" style="font-size:20px">LLM NODE · FRONTIER</div><h3 class="mt-s">Deep reasoning</h3>
+      <ul class="clean"><li>Multi-step planning</li><li>Code generation &amp; review</li><li>Long-form drafting</li><li>Hard analysis across departments</li><li>Only with minimal context packs</li></ul></div>
+  </div>
+  <div class="col mt-auto" style="gap:20px">
+    <p style="font-size:28px">Routing signals: <b>data sensitivity · difficulty · latency · cost · connectivity</b></p>
+    <div class="card" style="padding:22px 32px;align-self:flex-start"><p style="font-size:22px"><span class="tag real">Measured</span> Qwen3-0.6B-4bit on an Apple M6 Mac: <b>0.32 s</b> load · <b>~352 tok/s</b> generation · <b>0.5 GB</b> peak MLX memory <span style="color:var(--dim)">(single synthetic run)</span></p></div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">The economics: most company AI work is small and frequent (classification, extraction, summarization), and it belongs on the edge. Frontier models are reserved for hard reasoning and code. The measurement is real, from our local-model spike, and it's a single warm run, not a quality benchmark.</aside>
+</section>
+
+<!-- 13 · WHAT'S REAL -->
+<section class="slide" data-label="Evidence">
+  <div class="kicker">What's real today</div>
+  <h2>A working prototype, measured and not just claimed</h2>
+  <div class="row mt-m" style="gap:28px">
+    <div class="card grow" style="padding:30px 36px"><div class="stat teal">~22k</div><div class="stat-l">lines of Flutter · Rust · Python</div></div>
+    <div class="card grow" style="padding:30px 36px"><div class="stat amber">9</div><div class="stat-l">domain slices: office, tasks, agents, knowledge, sales, support, HR, finance, ops</div></div>
+    <div class="card grow" style="padding:30px 36px"><div class="stat violet">~60 fps</div><div class="stat-l">office render, p95 build 0.95 ms (idle, debug run)</div></div>
+    <div class="card grow" style="padding:30px 36px"><div class="stat green">35</div><div class="stat-l">test suites: Rust, HTTP, Flutter, macOS integration</div></div>
+  </div>
+  <div class="row mt-m grow ev13" style="gap:28px;align-items:stretch">
+    <div class="card grow" style="flex:1.4"><h3 class="green">Built</h3>
+      <p>Seeded 2.5D office with pathfinding, presence and room chat · server-enforced room access · task board + persistent outbox · durable agent jobs with fenced claims · room-scoped docs, search, meetings, whiteboard · CRM, contracts, bookings, support cases · leave, expenses, journals, payment authorizations, incidents · local MLX inference</p></div>
+    <div class="card grow"><h3 class="amber">Tested in isolation</h3>
+      <p>LiveKit room-epoch isolation (synthetic audio) · Codex CLI 0.164 in a networkless, read-only, non-root container with watchdog · SQLite backup &amp; restore</p></div>
+    <div class="card grow"><h3 style="color:var(--muted)">Not yet</h3>
+      <p>Voice in the app · real Codex provider &amp; PR flow · E2EE sync · remote deployment · production hardening</p></div>
+  </div>
+  <p class="mt-s" style="font-size:24px">Our rule: <b>if we didn't measure it, we don't claim it.</b> Seeded agents are shown as offline until a real runtime is running.</p>
+  <div class="pageno"></div>
+  <aside class="notes">Depth of thinking is a judging criterion. Show that we separate real, experimental and planned. Numbers come from docs/stage-1-status.md, docs/local-model-spike.md, docs/codex-evaluation.md and docs/capability-matrix.md.</aside>
+</section>
+
+<!-- 14 · BUILT WITH CODEX -->
+<section class="slide" data-label="Codex">
+  <div class="kicker">Built with Codex, and Codex built in</div>
+  <h2>Codex is both how we build it and how its agents work</h2>
+  <div class="row mt-m grow" style="gap:40px;align-items:stretch">
+    <div class="card grow"><h3 class="teal">How we build with Codex</h3>
+      <div class="tl mt-s">
+        <div class="ev"><div class="who">1 · SPEC</div><p>Reference docs: product, architecture, office, security, seed, open decisions</p></div>
+        <div class="ev"><div class="who">2 · STAGE PROMPTS</div><p>Codex builds vertical slices end to end: Rust core → node → Flutter UI → tests</p></div>
+        <div class="ev"><div class="who">3 · VERIFY</div><p>Codex has to run, measure and report real results, and label anything fake</p></div>
+        <div class="ev"><div class="who">4 · ITERATE</div><p>Capability matrix + ADRs keep each stage honest</p></div>
+      </div>
+    </div>
+    <div class="card grow hl"><h3 class="amber">Codex as the Dev Agent's engine</h3>
+      <ul class="clean mt-s">
+        <li>Process node claims an <b>approved job</b> (durable, fenced)</li>
+        <li>Runs <span class="mono" style="color:var(--text)">codex exec</span> in a <b>networkless, read-only, non-root</b> container</li>
+        <li>PID / memory / CPU limits, deadline, watchdog, cancel</li>
+        <li>Output becomes a <b>PR for human review</b>, never a silent merge</li>
+        <li>Agent identity stays separate from the coding engine, so engines can be swapped</li>
+      </ul>
+    </div>
+  </div>
+  <div class="pageno"></div>
+  <aside class="notes">Judging criterion: how effectively Codex was used. Two layers: (1) our development process is spec- and prompt-driven with Codex, with strict verification rules; (2) inside the product, Codex is the runtime for the Dev Agent, sandboxed and approval-gated.</aside>
+</section>
+
+<!-- 15 · ROADMAP -->
+<section class="slide" data-label="Roadmap">
+  <div class="kicker">Roadmap</div>
+  <h2>Each stage ships as a usable vertical slice</h2>
+  <div class="road">
+    <div class="stage"><div class="n">01</div><h3>Virtual office &amp; comms</h3><p>Rooms, identities, presence, chat, voice, policies</p><span class="tag real">Prototype</span></div>
+    <div class="stage"><div class="n">02</div><h3>Tasks &amp; workflow</h3><p>Projects, boards, assignment to people or agents, audit</p><span class="tag real">Prototype</span></div>
+    <div class="stage"><div class="n">03</div><h3>Mona &amp; Dev Agent</h3><p>Agent runtime, approvals, Codex runner, MCP gateway</p><span class="tag exp">Partial</span></div>
+    <div class="stage"><div class="n">04</div><h3>Knowledge &amp; edge AI</h3><p>Docs, search, meetings, whiteboard, local/cloud inference</p><span class="tag exp">Partial</span></div>
+    <div class="stage"><div class="n">05</div><h3>Customers &amp; sales</h3><p>CRM, support, contracts, bookings, integrations</p><span class="tag exp">Partial</span></div>
+    <div class="stage"><div class="n">06</div><h3>HR, finance &amp; ops</h3><p>Leave, expenses, journals, payments, incidents, separation of duties</p><span class="tag exp">Partial</span></div>
+    <div class="stage"><div class="n">07</div><h3>Hardening &amp; platforms</h3><p>Security review, backup, E2EE, IoT nodes, more platforms</p><span class="tag plan">Next</span></div>
+  </div>
+  <p class="mt-auto" style="font-size:27px">macOS first. Every stage ships with <b>permission checks, tests and documentation</b>.</p>
+  <div class="pageno"></div>
+  <aside class="notes">Stages are ordered by value: first make humans and agents co-present and able to communicate, then give them work, then let agents actually execute. Partial = vertical slice exists in the prototype with documented gaps.</aside>
+</section>
+
+<!-- 16 · CLOSING -->
+<section class="slide s-title" data-label="Monastack · by NVIAI">
+  <div class="kicker">Why Monastack</div>
+  <h2 style="font-size:92px;max-width:1700px">Stop rebuilding apps for humans.<br><span class="grad">Build the company for agents.</span></h2>
+  <div class="row mt-l" style="align-items:stretch">
+    <div class="card grow"><div class="mono amber" style="font-size:20px">AI-NATIVE PRODUCTS &amp; OPS</div><p class="mt-s">AI-first from the schema up, with one clean data layer for every department.</p></div>
+    <div class="card grow"><div class="mono teal" style="font-size:20px">AUTONOMOUS &amp; ADAPTIVE</div><p class="mt-s">Agents work 24/7 on process nodes, with fenced jobs and human approvals.</p></div>
+    <div class="card grow"><div class="mono violet" style="font-size:20px">DEEP DOMAIN</div><p class="mt-s">Real business rules for support, sales, HR and finance, including separation of duties.</p></div>
+  </div>
+  <p class="lead mt-l">Thank you. <b>Team NVIAI</b> · New Vision AI &amp; IoT · <span class="teal">nviai.com</span></p>
+  <div class="pageno"></div>
+  <aside class="notes">Close on the thesis line. Then map to the three directions in one breath each. Invite the judges to the live demo: walk to Mona's desk in the office.</aside>
+</section>
+
+</div></div>
+<div id="notes-panel"></div>
+
+<script>
+(function () {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const stage = document.getElementById('stage');
+  const notes = document.getElementById('notes-panel');
+  const progress = document.getElementById('progress');
+  let i = 0;
+
+  slides.forEach((s, n) => { const p = s.querySelector('.pageno'); if (p) p.textContent = String(n + 1).padStart(2, '0') + ' / ' + slides.length; });
+
+  function fit() {
+    const k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = 'scale(' + k + ')';
+  }
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    const a = slides[i].querySelector('.notes');
+    notes.innerHTML = '<b>Speaker notes · ' + (i + 1) + '</b><br>' + (a ? a.innerHTML : '');
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    if (location.hash !== '#' + (i + 1)) history.replaceState(null, '', '#' + (i + 1));
+  }
+  window.addEventListener('resize', fit);
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key.toLowerCase() === 'n') notes.classList.toggle('show');
+    else if (e.key.toLowerCase() === 'f') { try { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); } catch (_) {} }
+  });
+  document.getElementById('viewport').addEventListener('click', e => { show(i + (e.clientX > window.innerWidth / 2 ? 1 : -1)); });
+
+  // ---- Diagram: schema sources ----
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, text) { const x = document.createElementNS(NS, tag); for (const k in attrs) x.setAttribute(k, attrs[k]); if (text != null) x.textContent = text; return x; }
+  const srcs = document.getElementById('srcs');
+  ['Customer support', 'Warehouse', 'Dev & CI', 'App events', 'HRM', 'CRM', 'Finance'].forEach((name, k) => {
+    const y = 48 + k * 68;
+    srcs.appendChild(el('rect', { x: 0, y: y, width: 190, height: 50, rx: 12, fill: '#131c38', stroke: '#34426e' }));
+    srcs.appendChild(el('text', { x: 95, y: y + 32, 'text-anchor': 'middle', 'font-size': 18, fill: '#e9edf8' }, name));
+    srcs.appendChild(el('line', { x1: 190, y1: y + 25, x2: 245, y2: 280, stroke: '#4a5680', 'stroke-width': 1.6, 'marker-end': 'url(#ar)' }));
+  });
+
+  // ---- Diagram: edge sites ----
+  const sites = document.getElementById('sites');
+  const nodes = [
+    { x: 200, y: 400, t: 'HQ · Mac', c: '#3dd6c6', l: ['App + local AI (MLX)', 'Data node replica'] },
+    { x: 540, y: 380, t: 'Process node', c: '#ffb547', l: ['Agents 24/7 · Codex sandbox', 'Data node replica'] },
+    { x: 880, y: 400, t: 'Warehouse · IoT', c: '#3dd6c6', l: ['Cameras · sensors · edge AI', 'Data node replica'] },
+    { x: 300, y: 600, t: 'Remote laptop', c: '#3dd6c6', l: ['App + local model', 'Offline-capable replica'] },
+    { x: 780, y: 600, t: 'Media node', c: '#5ab8ff', l: ['WebRTC · LiveKit', 'Policy-gated voice'] }
+  ];
+  nodes.forEach(n => {
+    const w = 270, h = 116, x = n.x - w / 2, y = n.y - h / 2;
+    sites.appendChild(el('rect', { x: x, y: y, width: w, height: h, rx: 20, fill: '#131c38', stroke: n.c, 'stroke-width': 2 }));
+    sites.appendChild(el('text', { x: n.x, y: y + 36, 'text-anchor': 'middle', 'font-size': 21, 'font-weight': 750, fill: n.c }, n.t));
+    n.l.forEach((s, k) => sites.appendChild(el('text', { x: n.x, y: y + 66 + k * 26, 'text-anchor': 'middle', 'font-size': 16, fill: '#c9d3ee' }, s)));
+  });
+  sites.appendChild(el('text', { x: 540, y: 690, 'text-anchor': 'middle', 'font-size': 16, fill: '#3dd6c6' }, 'peer-to-peer sync · outbox · op_id · versions · replicas'));
+
+  // ---- Diagram: isometric office ----
+  const svg = document.getElementById('office');
+  const TW = 60, TH = 30, OX = 470, OY = 70;
+  const FONT = 'Inter, -apple-system, sans-serif';
+  const iso = (gx, gy) => [OX + (gx - gy) * TW / 2, OY + (gx + gy) * TH / 2];
+  const poly = (pts, attrs) => el('polygon', Object.assign({ points: pts.map(p => p.join(',')).join(' ') }, attrs));
+  const rooms = [
+    { n: 'Dev & QA', x: 0, y: 0, w: 6, h: 5, c: '#2e5b8f' },
+    { n: 'Product', x: 6, y: 0, w: 5, h: 5, c: '#4b3f8f' },
+    { n: 'Meeting', x: 11, y: 0, w: 5, h: 5, c: '#2f6f6a' },
+    { n: 'Sales', x: 0, y: 5, w: 5, h: 5, c: '#8a5a2b' },
+    { n: 'Lobby', x: 5, y: 5, w: 6, h: 5, c: '#7a6a3a' },
+    { n: 'Support', x: 11, y: 5, w: 5, h: 5, c: '#2b6f8a' },
+    { n: 'HR 🔒', x: 0, y: 10, w: 5, h: 4, c: '#7a3a55' },
+    { n: 'Finance 🔒', x: 5, y: 10, w: 6, h: 4, c: '#7a3a55' },
+    { n: 'Lounge', x: 11, y: 10, w: 5, h: 4, c: '#3f7a4a' }
+  ];
+  const WALL = 26;
+  const labels = [];
+  rooms.forEach(r => {
+    const a = iso(r.x, r.y), b = iso(r.x + r.w, r.y), c = iso(r.x + r.w, r.y + r.h), d = iso(r.x, r.y + r.h);
+    svg.appendChild(poly([a, b, [b[0], b[1] - WALL], [a[0], a[1] - WALL]], { fill: '#2a355f' }));
+    svg.appendChild(poly([a, d, [d[0], d[1] - WALL], [a[0], a[1] - WALL]], { fill: '#222c52' }));
+    svg.appendChild(poly([a, b, c, d], { fill: r.c, stroke: '#0e1530', 'stroke-width': 4, opacity: .94 }));
+    labels.push([iso(r.x + r.w / 2, r.y + r.h / 2), r.n]);
+  });
+  function avatar(gx, gy, color, label, online) {
+    const p = iso(gx, gy);
+    svg.appendChild(el('ellipse', { cx: p[0], cy: p[1], rx: 13, ry: 6, fill: 'rgba(0,0,0,.35)' }));
+    svg.appendChild(el('rect', { x: p[0] - 9, y: p[1] - 30, width: 18, height: 26, rx: 8, fill: color }));
+    svg.appendChild(el('circle', { cx: p[0], cy: p[1] - 38, r: 9, fill: color }));
+    svg.appendChild(el('circle', { cx: p[0] + 10, cy: p[1] - 46, r: 5, fill: online ? '#5be49b' : '#6b7799', stroke: '#0e1530', 'stroke-width': 1.5 }));
+    if (label) {
+      const w = label.length * 9 + 20;
+      svg.appendChild(el('rect', { x: p[0] - w / 2, y: p[1] - 80, width: w, height: 24, rx: 12, fill: 'rgba(10,15,30,.88)', stroke: color }));
+      svg.appendChild(el('text', { x: p[0], y: p[1] - 63, 'text-anchor': 'middle', 'font-size': 14, 'font-weight': 700, fill: '#e9edf8', 'font-family': 'JetBrains Mono, SF Mono, monospace' }, label));
+    }
+  }
+  // Mona's desk in the lobby
+  svg.appendChild(poly([iso(8.4, 6.1), iso(9.6, 6.1), iso(9.6, 6.8), iso(8.4, 6.8)], { fill: '#d9b77a', stroke: '#0e1530', 'stroke-width': 2 }));
+  // agents stand left/right of room centers so room labels stay readable; drawn back-to-front
+  avatar(4.67, 1.5, '#5ab8ff', 'qa-agent', false);
+  avatar(2.0, 4.17, '#5ab8ff', 'dev-agent', true);
+  avatar(10.17, 1.5, '#9b8cff', 'pm-agent', true);
+  avatar(15.17, 1.5, '#e9edf8', null, true);
+  avatar(12.5, 4.17, '#e9edf8', null, true);
+  avatar(9.0, 5.6, '#ffb547', 'mona', true);
+  avatar(1.5, 9.17, '#ffb547', 'sales-agent', false);
+  avatar(7.0, 9.17, '#e9edf8', 'you', true);
+  avatar(12.5, 9.17, '#3dd6c6', 'cskh-agent', true);
+  svg.appendChild(el('rect', { x: 40, y: 470, width: 330, height: 74, rx: 16, fill: '#e9edf8' }));
+  svg.appendChild(el('text', { x: 60, y: 498, 'font-size': 14, 'font-weight': 700, fill: '#5a6488', 'font-family': 'JetBrains Mono, SF Mono, monospace' }, 'you → mona · voice'));
+  svg.appendChild(el('text', { x: 60, y: 526, 'font-size': 17, 'font-weight': 650, fill: '#0a0f1e', 'font-family': FONT }, '"Customers are waiting. Handle it."'));
+  labels.forEach(([p, n]) => {
+    const w = n.length * 9.5 + 22;
+    svg.appendChild(el('rect', { x: p[0] - w / 2, y: p[1] - 15, width: w, height: 28, rx: 9, fill: 'rgba(10,15,30,.55)' }));
+    svg.appendChild(el('text', { x: p[0], y: p[1] + 5, 'text-anchor': 'middle', 'font-size': 16, 'font-weight': 750, fill: '#f4f6ff', 'font-family': FONT }, n));
+  });
+  const leg = [[30, '#5be49b', 'runtime online'], [180, '#6b7799', 'profile only (offline)'], [380, null, '🔒 restricted room: default deny']];
+  leg.forEach(([x, c, t]) => {
+    if (c) svg.appendChild(el('circle', { cx: x, cy: 618, r: 7, fill: c }));
+    svg.appendChild(el('text', { x: c ? x + 14 : x, y: 624, 'font-size': 16, fill: '#c9d3ee', 'font-family': FONT }, t));
+  });
+
+  fit();
+  const h = parseInt(location.hash.slice(1), 10);
+  show(isNaN(h) ? 0 : h - 1);
+})();
+</script>
+</body>
+</html>

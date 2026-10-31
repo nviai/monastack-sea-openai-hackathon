@@ -1,0 +1,11 @@
+# ADR 0001: Prototype local authority and scoped records
+
+Status: accepted for the local prototype only.
+
+The office node is a loopback-only development authority that stores server-readable SQLite records. It checks actor credentials and the current permission on each protected request. It combines collaboration and record authority for development convenience; it is not the eventual backup-only sync node. The app keeps an unencrypted task-command outbox in its sandbox. These choices permit a working macOS prototype without inventing production credentials or claiming end-to-end encryption.
+
+Room-scoped documents and meetings follow current room membership. A private project has an owner and explicit human readers and editors; existing private members remain editors on upgrade. Linked job proposals inherit project access, and writes require editor access. Workspace-visible projects remain editable by workspace members. Sensitive HR and operations responder roles require explicit grants; organization admin is not an implicit HR or operations grant. The trusted operating-system user can make scoped grants using local node commands, which create audit events. Finance decisions and expense withdrawal are online records and do not execute payments.
+
+Writes use operation IDs and expected versions where applicable. Authorization is checked again before replay; an outbox command rejected by changed permissions stays rejected. Local snapshots are written to a new destination and checked; restoring an old snapshot can undo later revocations. Already downloaded plaintext cannot be recalled. This design does not provide cryptographic server identity, encrypted storage, bounded offline authorization leases, device enrollment, remote access, or tamper-evident audit. It must be revisited before confidential or remote deployment.
+
+There is no authorized agent runtime or media plane in this decision. A future process host must receive an explicit scoped identity and cannot infer authority from the local user or an agent profile. A future media service must enforce room access and revocation at the subscription boundary. Their absence is not represented as successful execution or voice.

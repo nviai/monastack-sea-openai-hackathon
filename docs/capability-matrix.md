@@ -1,0 +1,18 @@
+# Capability and verification matrix
+
+This matrix describes the local development prototype, not production readiness. Record-level data is server-readable and the node listens on loopback only. Detailed limits, setup and commands are in the stage status documents.
+
+| Area | Present | Evidence | Remaining work |
+| --- | --- | --- | --- |
+| Office | Seeded map, pan/zoom, limited presence interpolation, pathfinding, audited local operator and authenticated local administrator room membership, local presence and chat with a limited durable send queue | Rust map/permission tests, node HTTP tests, two simultaneous macOS app processes with synthetic records | Two physical devices, crash expiry, voice, remote topology and production identity; see stage 1 status |
+| Tasks | Projects, task board, assignment, comments, history, private project membership and limited persistent command outbox | Rust and Flutter tests, HTTP and macOS lost-response/revocation integration | Offline snapshots and leases, dependency-aware reconciliation, full role model |
+| Agents | Durable proposals, opt-in host claims and fenced reports; a one-shot networkless worker tested with synthetic commands | Rust lifecycle, HTTP and macOS integration | No workspace-enabled or configured Codex execution, enforced model budget, PR workflow or production isolation |
+| Knowledge | Room-scoped text documents, filtered search, basic UTC meeting records and scoped whiteboard notes | HTTP authorization, revocation and version tests; macOS document and meeting tests | Attachments, collaboration, richer search, full calendar and rich whiteboard collaboration |
+| Local inference | Opt-in loopback MLX text service, user-entered prompts | Synthetic model benchmark, HTTP and macOS integration | No workspace context, agent execution, quality guarantee or production isolation |
+| Sales | Role-scoped customer records, linked opportunity stages, internal contract proposals, local customer bookings and basic support cases | Rust policies, HTTP permission/version/revocation tests and macOS pipeline test | Full CRM, signed contracts, richer customer care, external booking, integrations and data lifecycle |
+| HR | Own leave requests, withdrawal, approved-leave cancellation proposals, separate HR decisions and a scoped monthly approved-leave calendar | HTTP role, calendar and conflict tests, Flutter and isolated macOS tests | Balances, HR role UI, payroll and broader HR records |
+| Finance | Online expense proposals, separated approval records and two-line local journals with reversals, net activity and per-currency activity balance, plus internal payment authorizations | HTTP authorization/version tests, two-node contention test and app tests | Full accounting, opening balances, financial statements, payment execution, policy, evidence and financial controls |
+| Operations | Reporter-scoped incidents, responder transitions and scoped discussion | HTTP policy, version and audit tests; Flutter and macOS reporting test | On-call, escalation, notifications, rich incident collaboration and operational controls |
+| Local recovery | SQLite online backup and restore to a new path, role and credential revocation commands | HTTP smoke backup/restore, access and replay tests | Managed encrypted backup, remote recovery, retention and comprehensive migrations |
+
+The app and node tests do not establish security against a hostile device or network, nor prove the unfinished roadmap stages complete. The trusted local operator can change HR and operations grants; those changes are audited but are not remote authenticated administration.
