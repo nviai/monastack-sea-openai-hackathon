@@ -80,6 +80,33 @@ abstract class _CollaborationSession extends State<Collaboration> {
     }
   }
 
+  final agentStreams = <HttpAgentStream>{};
+  AgentStream streamAgentRequest(String path, Object body) {
+    final capturedSession = session;
+    late final HttpAgentStream stream;
+    stream = HttpAgentStream(
+      url: Uri.parse('http://${auth.api.host}:${_nodePort()}$path'),
+      body: body,
+      bearer: auth.bearer,
+      onClose: () => agentStreams.remove(stream),
+      refresh: auth.refreshNow,
+      active: () =>
+          mounted &&
+          auth.active &&
+          !disconnecting &&
+          session == capturedSession,
+    );
+    agentStreams.add(stream);
+    return stream;
+  }
+
+  void cancelAgentStreams() {
+    for (final stream in agentStreams.toList()) {
+      stream.cancel();
+    }
+    agentStreams.clear();
+  }
+
   Future<dynamic> _requestWithCredential(
     String method,
     String path,
@@ -115,6 +142,7 @@ abstract class _CollaborationSession extends State<Collaboration> {
   /// Signs in or out of collaboration as the session changes.
   void _authChanged() {
     if (!mounted) return;
+    if (!auth.active) cancelAgentStreams();
     widget.onWorkspaceName?.call(auth.account?.workspaceName);
     if (auth.active && identity == null && !connecting) {
       connect();
@@ -334,6 +362,7 @@ abstract class _CollaborationSession extends State<Collaboration> {
   Future<void> disconnect() async {
     if (disconnecting) return;
     disconnecting = true;
+    cancelAgentStreams();
     liveAgent = null;
     widget.audioLevels?.value = {};
     widget.onlineAgents?.value = {};
@@ -435,6 +464,7 @@ abstract class _CollaborationSession extends State<Collaboration> {
 
   @override
   void dispose() {
+    cancelAgentStreams();
     presenceTimer?.cancel();
     movementTimer?.cancel();
     voice?.dispose();

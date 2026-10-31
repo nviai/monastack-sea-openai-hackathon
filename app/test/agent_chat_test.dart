@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:monastack/shared/agent_stream.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:monastack/features/agents/agent_chat.dart';
@@ -8,7 +11,72 @@ const actors = [
   {'id': 'dev-agent', 'name': 'Dev Agent', 'kind': 'agent', 'role': 'agent'},
   {'id': 'qa-agent', 'name': 'QA Agent', 'kind': 'agent', 'role': 'agent'},
 ];
+
+class FakeAgentStream implements AgentStream {
+  final controller = StreamController<Map<String, dynamic>>();
+  bool cancelled = false;
+  @override
+  Stream<Map<String, dynamic>> get events => controller.stream;
+  @override
+  void cancel() {
+    cancelled = true;
+    controller.close();
+  }
+}
+
 void main() {
+  testWidgets(
+    'renders deltas before completion; stop excludes partial text from context',
+    (tester) async {
+      final streams = <FakeAgentStream>[];
+      final payloads = <Map>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AgentChat(
+              request: (method, path, [body]) async => {
+                'configured': true,
+                'model': 'test',
+              },
+              actors: actors,
+              streamRequest: (path, body) {
+                payloads.add(body as Map);
+                final stream = FakeAgentStream();
+                streams.add(stream);
+                return stream;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Write a plan');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pump();
+      streams.single.controller.add({'event': 'delta', 'text': 'First step'});
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('First step'), findsOneWidget);
+      expect(find.text('Stop'), findsOneWidget);
+      await tester.tap(find.text('Stop'));
+      await tester.pumpAndSettle();
+      expect(streams.single.cancelled, isTrue);
+      expect(find.text('First step'), findsOneWidget);
+      await tester.tap(find.byTooltip('Retry'));
+      await tester.pump();
+      expect((payloads.last['messages'] as List).length, 1);
+      streams.last.controller.add({'event': 'done', 'text': 'Complete plan'});
+      unawaited(streams.last.controller.close());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Stop'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('Complete plan'), findsOneWidget);
+      expect(find.text('First step'), findsNothing);
+    },
+  );
+
   testWidgets(
     'UI tool calls execute locally and report results before the final answer',
     (tester) async {
@@ -63,6 +131,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'Open task board');
+      await tester.pump();
       await tester.tap(find.byTooltip('Send'));
       await tester.pumpAndSettle();
       expect(opened, ['tasks']);
@@ -95,11 +164,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'First question');
+    await tester.pump();
     await tester.tap(find.byTooltip('Send'));
     await tester.pumpAndSettle();
     expect(calls.single, '/v1/agents/qa-agent/chat');
     expect(find.text('Agent reply'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'Follow up');
+    await tester.pump();
     await tester.tap(find.byTooltip('Send'));
     await tester.pumpAndSettle();
     expect((payloads.last['messages'] as List).length, 3);
@@ -109,6 +180,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Agent reply'), findsNothing);
     await tester.enterText(find.byType(TextField), 'Dev question');
+    await tester.pump();
     await tester.tap(find.byTooltip('Send'));
     await tester.pumpAndSettle();
     expect(calls.last, '/v1/agents/dev-agent/chat');
@@ -130,11 +202,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Keep my question');
+    await tester.pump();
     await tester.tap(find.byTooltip('Send'));
     await tester.pumpAndSettle();
-    expect(find.text('Keep my question'), findsOneWidget);
+    expect(find.text('Keep my question'), findsNWidgets(2));
     expect(find.textContaining('quota'), findsOneWidget);
-    expect(find.text('You'), findsNothing);
+    expect(find.text('You'), findsOneWidget);
   });
 
   testWidgets('missing backend key disables sending', (tester) async {

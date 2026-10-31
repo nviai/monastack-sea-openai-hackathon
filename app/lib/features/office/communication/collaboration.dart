@@ -1,3 +1,4 @@
+import 'package:monastack/shared/agent_stream.dart';
 import 'package:monastack/features/agents/agent_configuration.dart';
 import 'package:monastack/features/agents/ui_actions.dart';
 import 'package:monastack/features/office/voice/live_agent_panel.dart';
@@ -210,6 +211,7 @@ class CollaborationState extends _CollaborationConnection {
       'agent-chat' => AlertDialog(
         content: AgentChat(
           request: request,
+          streamRequest: streamAgentRequest,
           actors: widget.actors,
           uiActions: uiActions,
         ),
@@ -287,6 +289,7 @@ class CollaborationState extends _CollaborationConnection {
       builder: (context) => AlertDialog(
         content: AgentChat(
           request: request,
+          streamRequest: streamAgentRequest,
           actors: widget.actors,
           initialAgent: agent,
           uiActions: uiActions,

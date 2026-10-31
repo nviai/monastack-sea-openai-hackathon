@@ -1827,6 +1827,41 @@ pub async fn forward_to_master(State(state): State<Db>, request: Request, next: 
     let Ok(body) = axum::body::to_bytes(request.into_body(), 1 << 20).await else {
         return (StatusCode::PAYLOAD_TOO_LARGE, "request too large").into_response();
     };
+    // Preserve streaming bodies and cancellation through the member node.
+    if path.starts_with("/v1/agents/") && path.ends_with("/chat") {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(65))
+            .build()
+            .unwrap();
+        let mut upstream = client
+            .request(
+                reqwest::Method::from_bytes(method.as_bytes()).unwrap(),
+                format!("http://{address}{path_and_query}"),
+            )
+            .header("content-type", "application/json")
+            .body(body);
+        if let Some(authorization) = authorization {
+            upstream = upstream.header("authorization", authorization);
+        }
+        return match upstream.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let content_type = response.headers().get("content-type").cloned();
+                let mut builder = Response::builder()
+                    .status(status)
+                    .header("cache-control", "no-cache");
+                if let Some(value) = content_type {
+                    builder = builder.header("content-type", value);
+                }
+                builder
+                    .body(Body::from_stream(response.bytes_stream()))
+                    .unwrap()
+            }
+            Err(_) => (StatusCode::BAD_GATEWAY, "master node unreachable").into_response(),
+        };
+    }
     let Some((status, response)) = master_request(
         address,
         &method,

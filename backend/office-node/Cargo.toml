@@ -19,5 +19,6 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 argon2 = "0.5"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 dotenvy = "0.15"
+async-stream = "0.3"
